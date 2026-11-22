@@ -36,6 +36,13 @@
             </array>
         </dict>
     </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>IPAForge използва локална връзка към този iPhone, за да подаде подписания IPA към системната OTA инсталация.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UILaunchScreen</key>
     <dict/>
 </dict>
