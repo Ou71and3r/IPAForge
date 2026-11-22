@@ -107,26 +107,28 @@ enum IPAArchiveService {
                 throw IPAArchiveError.unsafePath(path)
             }
             let normalizedPath = path.hasSuffix("/") ? String(path.dropLast()) : path
+            let normalizedKey = IPAArchivePathValidator.collisionKey(for: normalizedPath)
             let pathComponents = normalizedPath.split(separator: "/").map(String.init)
             var ancestor = ""
             for component in pathComponents.dropLast() {
                 ancestor = ancestor.isEmpty ? component : ancestor + "/" + component
-                guard !seenFiles.contains(ancestor) else {
+                let ancestorKey = IPAArchivePathValidator.collisionKey(for: ancestor)
+                guard !seenFiles.contains(ancestorKey) else {
                     throw IPAArchiveError.unsafePath(path)
                 }
             }
             if entry.type == .directory {
-                guard !seenFiles.contains(normalizedPath) else {
+                guard !seenFiles.contains(normalizedKey) else {
                     throw IPAArchiveError.unsafePath(path)
                 }
-                seenDirectories.insert(normalizedPath)
+                seenDirectories.insert(normalizedKey)
             } else {
-                guard !seenDirectories.contains(normalizedPath),
-                      !seenFiles.contains(where: { $0.hasPrefix(normalizedPath + "/") }),
-                      !seenDirectories.contains(where: { $0.hasPrefix(normalizedPath + "/") }) else {
+                guard !seenDirectories.contains(normalizedKey),
+                      !seenFiles.contains(where: { $0.hasPrefix(normalizedKey + "/") }),
+                      !seenDirectories.contains(where: { $0.hasPrefix(normalizedKey + "/") }) else {
                     throw IPAArchiveError.unsafePath(path)
                 }
-                seenFiles.insert(normalizedPath)
+                seenFiles.insert(normalizedKey)
             }
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
                 throw IPAArchiveError.entrySizeOverflow(path)
