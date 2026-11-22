@@ -32,3 +32,25 @@ targets:
         INFOPLIST_FILE: Sources/IPAForge/Info.plist
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
+
+  IPAForgeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/IPAForgeTests
+    dependencies:
+      - target: IPAForge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ou71and3r.ipaforge.tests
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: IPAForge
+schemes:
+  IPAForge:
+    build:
+      targets:
+        IPAForge: all
+    test:
+      targets:
+        - IPAForgeTests
