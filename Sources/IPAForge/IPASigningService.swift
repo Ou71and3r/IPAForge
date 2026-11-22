@@ -5,6 +5,10 @@ import RorkSign
 enum IPASigningError: LocalizedError {
     case missingPayload
     case missingBundleIdentifier
+    case missingRootProfile
+    case noMatchingProfile(String)
+    case ambiguousProfiles(String)
+    case expiredProfile(String)
     case insufficientStorage(required: Int64, available: Int64)
 
     var errorDescription: String? {
@@ -13,6 +17,14 @@ enum IPASigningError: LocalizedError {
             return "В архива не е открито приложение в Payload."
         case .missingBundleIdentifier:
             return "Не може да бъде прочетен Bundle Identifier от Info.plist."
+        case .missingRootProfile:
+            return "Не е избран provisioning профил, който разрешава основното приложение."
+        case .noMatchingProfile(let identifier):
+            return "Няма provisioning профил за вложения компонент: \(identifier)"
+        case .ambiguousProfiles(let identifier):
+            return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
+        case .expiredProfile(let identifier):
+            return "Provisioning профилът за \(identifier) е изтекъл."
         case .insufficientStorage(let required, let available):
             let formatter = ByteCountFormatter()
             formatter.countStyle = .file
@@ -22,15 +34,10 @@ enum IPASigningError: LocalizedError {
 }
 
 enum IPASigningService {
-    // RorkSign extracts the archive to a temporary workspace and writes a new
-    // IPA. Reserve room for the extracted tree, output archive, input, and headroom.
     private static let additionalStorageHeadroom: Int64 = 512 * 1024 * 1024
 
-    static func sign(ipaURL: URL, p12URL: URL, profileURL: URL, password: String) throws -> URL {
+    static func sign(ipaURL: URL, p12URL: URL, profileURLs: [URL], password: String) throws -> URL {
         let fm = FileManager.default
-
-        // Validate the archive and estimate temporary storage before starting a
-        // potentially multi-gigabyte extraction/repack operation.
         let summary = try IPAArchiveService.inspect(archiveURL: ipaURL)
         let (twiceExpanded, overflowA) = summary.uncompressedSize.multipliedReportingOverflow(by: 2)
         let (withInput, overflowB) = twiceExpanded.addingReportingOverflow(summary.fileSize)
@@ -47,28 +54,66 @@ enum IPASigningService {
         }
 
         let p12 = try Data(contentsOf: p12URL, options: .mappedIfSafe)
-        let profile = try Data(contentsOf: profileURL, options: .mappedIfSafe)
         let identity = try SigningIdentity(pkcs12Data: p12, password: password)
-
-        let archive = try Archive(url: ipaURL, accessMode: .read)
-        guard let appInfoEntry = archive.first(where: {
-            $0.path.hasPrefix("Payload/") && $0.path.hasSuffix(".app/Info.plist")
-        }) else {
-            throw IPASigningError.missingPayload
+        let profiles = try profileURLs.map { url -> (url: URL, data: Data, profile: ProvisioningProfile) in
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            let profile = try RorkSigner.decodeProvisioningProfile(data)
+            return (url, data, profile)
         }
 
-        let temporaryInfoURL = fm.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("plist")
-        defer { try? fm.removeItem(at: temporaryInfoURL) }
-        _ = try archive.extract(appInfoEntry, to: temporaryInfoURL)
-        let infoData = try Data(contentsOf: temporaryInfoURL)
-        guard
-            let info = try PropertyListSerialization.propertyList(from: infoData, options: [], format: nil) as? [String: Any],
-            let bundleIdentifier = info["CFBundleIdentifier"] as? String,
-            !bundleIdentifier.isEmpty
-        else {
-            throw IPASigningError.missingBundleIdentifier
+        let archive = try Archive(url: ipaURL, accessMode: .read)
+        let rootInfoEntry = archive.first(where: {
+            let parts = $0.path.split(separator: "/")
+            return parts.count == 3 && parts[0] == "Payload"
+                && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
+        })
+        guard let rootInfoEntry else { throw IPASigningError.missingPayload }
+
+        let inspectionDirectory = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fm.createDirectory(at: inspectionDirectory, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: inspectionDirectory) }
+
+        func readBundleIdentifier(from entry: Archive.Entry) throws -> String {
+            let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? fm.removeItem(at: fileURL) }
+            _ = try archive.extract(entry, to: fileURL)
+            let data = try Data(contentsOf: fileURL)
+            guard let info = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                  let identifier = info["CFBundleIdentifier"] as? String,
+                  !identifier.isEmpty else {
+                throw IPASigningError.missingBundleIdentifier
+            }
+            return identifier
+        }
+
+        let rootIdentifier = try readBundleIdentifier(from: rootInfoEntry)
+        guard let rootProfile = try selectProfile(for: rootIdentifier, from: profiles) else {
+            throw IPASigningError.missingRootProfile
+        }
+        guard !rootProfile.profile.isExpired() else {
+            throw IPASigningError.expiredProfile(rootIdentifier)
+        }
+
+        var profilesByBundleIdentifier: [String: Data] = [:]
+        for entry in archive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
+            let parts = entry.path.split(separator: "/")
+            guard parts.count >= 4 else { continue }
+            let identifier = try readBundleIdentifier(from: entry)
+            if identifier == rootIdentifier { continue }
+            guard let selected = try selectProfile(for: identifier, from: profiles) else {
+                // Frameworks and resource bundles are not independently provisioned.
+                let isProvisionedBundle = parts.contains(where: {
+                    $0.hasSuffix(".appex") || $0.hasSuffix(".app")
+                })
+                if isProvisionedBundle {
+                    throw IPASigningError.noMatchingProfile(identifier)
+                }
+                continue
+            }
+            guard !selected.profile.isExpired() else {
+                throw IPASigningError.expiredProfile(identifier)
+            }
+            profilesByBundleIdentifier[identifier] = selected.data
         }
 
         let outputDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -84,10 +129,25 @@ enum IPASigningService {
             outputURL: outputURL,
             identity: identity,
             options: AppSigningOptions(
-                bundleIdentifier: bundleIdentifier,
-                rootProvisioningProfile: profile
+                bundleIdentifier: rootIdentifier,
+                rootProvisioningProfile: rootProfile.data,
+                provisioningProfilesByBundleIdentifier: profilesByBundleIdentifier
             )
         )
         return outputURL
+    }
+
+    private static func selectProfile(
+        for bundleIdentifier: String,
+        from profiles: [(url: URL, data: Data, profile: ProvisioningProfile)]
+    ) throws -> (url: URL, data: Data, profile: ProvisioningProfile)? {
+        let matches = profiles.filter { $0.profile.supportsBundleIdentifier(bundleIdentifier) }
+        guard !matches.isEmpty else { return nil }
+        let exact = matches.filter { $0.profile.explicitAuthorizedBundleIdentifier == bundleIdentifier }
+        let preferred = exact.isEmpty ? matches : exact
+        guard preferred.count == 1 else {
+            throw IPASigningError.ambiguousProfiles(bundleIdentifier)
+        }
+        return preferred[0]
     }
 }
