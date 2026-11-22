@@ -136,6 +136,36 @@ enum IPASigningService {
             .appendingPathExtension("ipa")
         defer { try? fm.removeItem(at: temporaryOutputURL) }
 
+        guard let applicationSupport = fm.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            throw IPAArchiveError.noDocumentsDirectory
+        }
+        let workspaceRoot = applicationSupport.appendingPathComponent(
+            "SigningWorkspaces",
+            isDirectory: true
+        )
+        try fm.createDirectory(at: workspaceRoot, withIntermediateDirectories: true)
+        var rootValues = URLResourceValues()
+        rootValues.isExcludedFromBackup = true
+        try workspaceRoot.setResourceValues(rootValues)
+        try fm.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: workspaceRoot.path
+        )
+
+        let operationWorkspace = workspaceRoot.appendingPathComponent(
+            UUID().uuidString,
+            isDirectory: true
+        )
+        try fm.createDirectory(at: operationWorkspace, withIntermediateDirectories: false)
+        try fm.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: operationWorkspace.path
+        )
+        defer { try? fm.removeItem(at: operationWorkspace) }
+
         try RorkSigner.signIPA(
             at: ipaURL,
             outputURL: temporaryOutputURL,
@@ -144,7 +174,9 @@ enum IPASigningService {
                 bundleIdentifier: rootIdentifier,
                 rootProvisioningProfile: rootProfile.data,
                 provisioningProfilesByBundleIdentifier: profilesByBundleIdentifier
-            )
+            ),
+            archiveCompressionMode: .deflated,
+            temporaryDirectory: operationWorkspace
         )
         try fm.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
