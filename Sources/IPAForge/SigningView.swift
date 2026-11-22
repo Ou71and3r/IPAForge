@@ -1,5 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import Network
+import SafariServices
+import ZIPFoundation
 
 struct SigningView: View {
     let ipaURL: URL
@@ -11,6 +14,9 @@ struct SigningView: View {
     @State private var working = false
     @State private var outputURL: URL?
     @State private var errorText: String?
+    @State private var installServer: IPAInstallHTTPServer?
+    @State private var showingInstallSheet = false
+    @State private var preparingInstall = false
 
     var body: some View {
         Form {
@@ -81,8 +87,23 @@ struct SigningView: View {
 
                 if let errorText { Text(errorText).foregroundStyle(.red) }
                 if let outputURL {
-                    ShareLink(item: outputURL) {
-                        Label("Запази / сподели подписания IPA", systemImage: "square.and.arrow.up")
+                    VStack(alignment: .leading, spacing: 12) {
+                        ShareLink(item: outputURL) {
+                            Label("Запази / сподели подписания IPA", systemImage: "square.and.arrow.up")
+                        }
+                        Button {
+                            startInstallation(for: outputURL)
+                        } label: {
+                            if preparingInstall {
+                                ProgressView("Подготовка на инсталацията…")
+                            } else {
+                                Label("Инсталирай на този iPhone", systemImage: "arrow.down.app")
+                            }
+                        }
+                        .disabled(preparingInstall || working)
+                        Text("Инсталацията използва OTA механизма на iOS. Manifest услугата получава метаданните на приложението и локалния адрес за изтегляне; самият IPA остава на устройството.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -93,6 +114,15 @@ struct SigningView: View {
             }
         }
         .navigationTitle("Подписване")
+        .sheet(isPresented: $showingInstallSheet, onDismiss: {
+            installServer?.stop()
+            installServer = nil
+        }) {
+            if let installServer {
+                IPAInstallSafariView(url: installServer.installPageURL)
+                    .ignoresSafeArea()
+            }
+        }
         .fileImporter(isPresented: $choosingP12, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
             handleCredentialImport(result, expectedExtension: "p12") { p12URL = $0[0] }
         }
@@ -121,6 +151,317 @@ struct SigningView: View {
             errorText = error.localizedDescription
         }
     }
+
+
+    private func startInstallation(for url: URL) {
+        do {
+            errorText = nil
+            preparingInstall = true
+            let metadata = try IPAInstallMetadata.read(from: url)
+            let server = try IPAInstallHTTPServer(
+                ipaURL: url,
+                bundleIdentifier: metadata.bundleIdentifier,
+                displayName: metadata.displayName,
+                version: metadata.version
+            )
+            installServer = server
+            server.start { result in
+                DispatchQueue.main.async {
+                    preparingInstall = false
+                    switch result {
+                    case .success:
+                        showingInstallSheet = true
+                    case .failure(let error):
+                        installServer?.stop()
+                        installServer = nil
+                        errorText = error.localizedDescription
+                    }
+                }
+            }
+        } catch {
+            preparingInstall = false
+            errorText = error.localizedDescription
+        }
+    }
+}
+
+private struct IPAInstallMetadata {
+    let bundleIdentifier: String
+    let displayName: String
+    let version: String
+
+    static func read(from ipaURL: URL) throws -> IPAInstallMetadata {
+        let archive = try Archive(url: ipaURL, accessMode: .read)
+        guard let entry = archive.first(where: { path in
+            let parts = path.path.split(separator: "/")
+            return parts.count == 3
+                && parts[0] == "Payload"
+                && parts[1].hasSuffix(".app")
+                && parts[2] == "Info.plist"
+        }) else {
+            throw IPAInstallError.missingAppMetadata
+        }
+
+        let temporaryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        _ = try archive.extract(entry, to: temporaryURL)
+        let data = try Data(contentsOf: temporaryURL)
+        guard let info = try PropertyListSerialization.propertyList(
+            from: data,
+            options: [],
+            format: nil
+        ) as? [String: Any],
+        let bundleIdentifier = info["CFBundleIdentifier"] as? String,
+        !bundleIdentifier.isEmpty else {
+            throw IPAInstallError.missingAppMetadata
+        }
+
+        let displayName = (info["CFBundleDisplayName"] as? String)
+            ?? (info["CFBundleName"] as? String)
+            ?? bundleIdentifier
+        let version = (info["CFBundleShortVersionString"] as? String)
+            ?? (info["CFBundleVersion"] as? String)
+            ?? "1"
+        return IPAInstallMetadata(
+            bundleIdentifier: bundleIdentifier,
+            displayName: displayName,
+            version: version
+        )
+    }
+}
+
+private enum IPAInstallError: LocalizedError {
+    case missingAppMetadata
+    case invalidServerResponse
+    case fileUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .missingAppMetadata:
+            return "Не може да бъде прочетена информацията за приложението от подписания IPA."
+        case .invalidServerResponse:
+            return "Заявката за инсталиране е невалидна."
+        case .fileUnavailable:
+            return "Подписаният IPA вече не е наличен."
+        }
+    }
+}
+
+/// A small loopback HTTP server. The IPA itself is streamed from disk in chunks;
+/// it is never loaded into memory as one large Data object.
+private final class IPAInstallHTTPServer: @unchecked Sendable {
+    private let listener: NWListener
+    private let queue = DispatchQueue(label: "com.ou71and3r.ipaforge.ota")
+    private let ipaURL: URL
+    private let redirectHTML: Data
+    private let port: NWEndpoint.Port
+    private let startLock = NSLock()
+    private var didCompleteStart = false
+
+    let installPageURL: URL
+
+    init(
+        ipaURL: URL,
+        bundleIdentifier: String,
+        displayName: String,
+        version: String
+    ) throws {
+        let attributes = try FileManager.default.attributesOfItem(atPath: ipaURL.path)
+        guard (attributes[.size] as? NSNumber)?.int64Value ?? 0 > 0 else {
+            throw IPAInstallError.fileUnavailable
+        }
+
+        self.ipaURL = ipaURL
+        let selectedPort = NWEndpoint.Port(rawValue: UInt16.random(in: 30000...50000))!
+        self.port = selectedPort
+
+        var relayComponents = URLComponents(string: "https://api.palera.in/genPlist")!
+        relayComponents.queryItems = [
+            URLQueryItem(name: "bundleid", value: bundleIdentifier),
+            URLQueryItem(name: "name", value: displayName),
+            URLQueryItem(name: "version", value: version),
+            URLQueryItem(
+                name: "fetchurl",
+                value: "http://127.0.0.1:\(selectedPort.rawValue)/app.ipa"
+            )
+        ]
+        guard let relayURL = relayComponents.url,
+              let encodedRelayURL = relayURL.absoluteString.addingPercentEncoding(
+                withAllowedCharacters: .alphanumerics
+              ) else {
+            throw IPAInstallError.invalidServerResponse
+        }
+
+        let installURL = "itms-services://?action=download-manifest&url=\(encodedRelayURL)"
+        let html = """
+        <!doctype html>
+        <html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+        <body><p>Отваряне на системната инсталация…</p>
+        <a href="\(installURL)">Продължи към инсталиране</a>
+        <script>window.location.replace('\(installURL)');</script>
+        </body></html>
+        """
+        self.redirectHTML = Data(html.utf8)
+        self.installPageURL = URL(
+            string: "http://127.0.0.1:\(selectedPort.rawValue)/install"
+        )!
+
+        self.listener = try NWListener(using: .tcp, on: selectedPort)
+        self.listener.newConnectionHandler = { [weak self] connection in
+            self?.handle(connection)
+        }
+    }
+
+    func start(completion: @escaping (Result<Void, Error>) -> Void) {
+        listener.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .ready:
+                self.finishStart(.success(()), completion: completion)
+            case .failed(let error):
+                self.finishStart(.failure(error), completion: completion)
+            default:
+                break
+            }
+        }
+        listener.start(queue: queue)
+    }
+
+    func stop() {
+        listener.cancel()
+    }
+
+    private func finishStart(
+        _ result: Result<Void, Error>,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        startLock.lock()
+        guard !didCompleteStart else {
+            startLock.unlock()
+            return
+        }
+        didCompleteStart = true
+        startLock.unlock()
+        completion(result)
+    }
+
+    private func handle(_ connection: NWConnection) {
+        connection.start(queue: queue)
+        receiveRequest(on: connection, accumulated: Data())
+    }
+
+    private func receiveRequest(on connection: NWConnection, accumulated: Data) {
+        connection.receive(
+            minimumIncompleteLength: 1,
+            maximumLength: 8192
+        ) { [weak self] data, _, isComplete, error in
+            guard let self, error == nil else {
+                connection.cancel()
+                return
+            }
+            var requestData = accumulated
+            if let data { requestData.append(data) }
+            let delimiter = Data("\r\n\r\n".utf8)
+            if requestData.range(of: delimiter) != nil {
+                self.route(requestData, connection: connection)
+            } else if !isComplete && requestData.count < 65536 {
+                self.receiveRequest(on: connection, accumulated: requestData)
+            } else {
+                connection.cancel()
+            }
+        }
+    }
+
+    private func route(_ requestData: Data, connection: NWConnection) {
+        let request = String(decoding: requestData, as: UTF8.self)
+        guard let requestLine = request.components(separatedBy: "\r\n").first else {
+            sendResponse(status: "400 Bad Request", type: "text/plain", body: Data(), on: connection)
+            return
+        }
+        let fields = requestLine.split(separator: " ")
+        guard fields.count >= 2, fields[0] == "GET" else {
+            sendResponse(status: "405 Method Not Allowed", type: "text/plain", body: Data(), on: connection)
+            return
+        }
+        let rawPath = fields[1].split(separator: "?", maxSplits: 1).first.map(String.init) ?? ""
+        switch rawPath {
+        case "/install":
+            sendResponse(status: "200 OK", type: "text/html; charset=utf-8", body: redirectHTML, on: connection)
+        case "/app.ipa":
+            streamIPA(on: connection)
+        default:
+            sendResponse(status: "404 Not Found", type: "text/plain", body: Data(), on: connection)
+        }
+    }
+
+    private func sendResponse(
+        status: String,
+        type: String,
+        body: Data,
+        on connection: NWConnection
+    ) {
+        let header = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(header.utf8), completion: .contentProcessed { _ in
+            connection.send(content: body, completion: .contentProcessed { _ in
+                connection.cancel()
+            })
+        })
+    }
+
+    private func streamIPA(on connection: NWConnection) {
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: ipaURL.path)
+            guard let size = (attributes[.size] as? NSNumber)?.int64Value, size > 0 else {
+                throw IPAInstallError.fileUnavailable
+            }
+            let file = try FileHandle(forReadingFrom: ipaURL)
+            let header = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(size)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+            connection.send(content: Data(header.utf8), completion: .contentProcessed { [weak self] error in
+                guard let self, error == nil else {
+                    try? file.close()
+                    connection.cancel()
+                    return
+                }
+                self.sendNextChunk(from: file, on: connection)
+            })
+        } catch {
+            sendResponse(status: "404 Not Found", type: "text/plain", body: Data(), on: connection)
+        }
+    }
+
+    private func sendNextChunk(from file: FileHandle, on connection: NWConnection) {
+        do {
+            let chunk = try file.read(upToCount: 1024 * 1024) ?? Data()
+            guard !chunk.isEmpty else {
+                try? file.close()
+                connection.cancel()
+                return
+            }
+            connection.send(content: chunk, completion: .contentProcessed { [weak self] error in
+                guard let self, error == nil else {
+                    try? file.close()
+                    connection.cancel()
+                    return
+                }
+                self.sendNextChunk(from: file, on: connection)
+            })
+        } catch {
+            try? file.close()
+            connection.cancel()
+        }
+    }
+}
+
+private struct IPAInstallSafariView: UIViewControllerRepresentable {
+    let url: URL
+
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        SFSafariViewController(url: url)
+    }
+
+    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
+}
 
     private func copyIntoPrivateStorage(_ sourceURL: URL, expectedExtension: String) throws -> URL {
         let hasAccess = sourceURL.startAccessingSecurityScopedResource()
