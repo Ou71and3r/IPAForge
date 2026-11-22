@@ -9,9 +9,11 @@ IPAForge is an iOS app prototype for importing, inspecting, locally signing, and
 - Inspects ZIP entries with ZIPFoundation without extracting the full archive.
 - Reports archive size, entry count, total declared uncompressed size, Payload presence, app bundle names, and Info.plist entries.
 - Rejects unsafe archive paths, symbolic links, duplicate/colliding paths, more than 200,000 entries, and declared expanded sizes above 20 GiB.
-- Imports P12 and MobileProvision files into the app's private Application Support/SigningMaterial directory. Imported signing material is excluded from backups and stored with complete file protection.
+- Imports P12 and MobileProvision files into the app's private Application Support/SigningMaterial directory.
+- Excludes imported IPA files, signed IPA exports, and signing workspaces from device backups; applies iOS file protection to these files. Imported signing material is excluded from backups and stored with complete file protection.
 - Contains an on-device signing flow using the RorkSign package, checks selected provisioning profiles against the signing identity, matches profiles to bundle identifiers, and exports its output through the iOS share sheet.
-- Writes signed output through a temporary file and moves it into place without overwriting an existing signed IPA.
+- Writes signed output through a temporary file, re-inspects the completed archive before export, and moves it into place without overwriting an existing signed IPA.
+- Cleans abandoned signing workspaces and partial outputs older than 24 hours after an interrupted operation.
 - GitHub Actions builds both the iOS Simulator and generic iOS device targets without code signing, and runs archive-path security tests on the simulator.
 
 ## Validation status
