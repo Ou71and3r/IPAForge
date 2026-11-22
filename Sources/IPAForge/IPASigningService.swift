@@ -9,6 +9,7 @@ enum IPASigningError: LocalizedError {
     case noMatchingProfile(String)
     case ambiguousProfiles(String)
     case expiredProfile(String)
+    case outputValidationFailed
     case insufficientStorage(required: Int64, available: Int64)
 
     var errorDescription: String? {
@@ -25,6 +26,8 @@ enum IPASigningError: LocalizedError {
             return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
         case .expiredProfile(let identifier):
             return "Provisioning профилът за \(identifier) е изтекъл."
+        case .outputValidationFailed:
+            return "Подписването приключи, но полученият IPA не премина проверката за структура. Файлът няма да бъде експортиран."
         case .insufficientStorage(let required, let available):
             let formatter = ByteCountFormatter()
             formatter.countStyle = .file
@@ -178,6 +181,14 @@ enum IPASigningService {
             archiveCompressionMode: .deflated,
             temporaryDirectory: operationWorkspace
         )
+
+        // Validate the completed archive before publishing it to the user.
+        let signedSummary = try IPAArchiveService.inspect(archiveURL: temporaryOutputURL)
+        guard signedSummary.hasPayload,
+              signedSummary.appBundleNames == summary.appBundleNames else {
+            throw IPASigningError.outputValidationFailed
+        }
+
         try fm.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
     }
