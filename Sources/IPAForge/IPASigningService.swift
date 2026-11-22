@@ -129,6 +129,13 @@ enum IPASigningService {
         let outputDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Signed", isDirectory: true)
         try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        var outputDirectoryValues = URLResourceValues()
+        outputDirectoryValues.isExcludedFromBackup = true
+        try outputDirectory.setResourceValues(outputDirectoryValues)
+        try fm.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: outputDirectory.path
+        )
         let outputURL = uniqueOutputURL(
             in: outputDirectory,
             baseName: ipaURL.deletingPathExtension().lastPathComponent + "-signed",
@@ -186,6 +193,14 @@ enum IPASigningService {
             archiveCompressionMode: .deflated,
             temporaryDirectory: operationWorkspace
         )
+
+        try fm.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: temporaryOutputURL.path
+        )
+        var temporaryOutputValues = URLResourceValues()
+        temporaryOutputValues.isExcludedFromBackup = true
+        try temporaryOutputURL.setResourceValues(temporaryOutputValues)
 
         // Validate the completed archive before publishing it to the user.
         let signedSummary = try IPAArchiveService.inspect(archiveURL: temporaryOutputURL)
