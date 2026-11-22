@@ -37,7 +37,7 @@ enum IPAArchiveError: LocalizedError {
         case .unsafePath(let path):
             return "Архивът съдържа небезопасен път: \(path)"
         case .entrySizeOverflow(let path):
-            return "Размерът на запис в архива е прекалено голям: \\(path)"
+            return "Размерът на запис в архива е прекалено голям: \(path)"
         case .invalidIPA:
             return "Архивът не съдържа валидна структура Payload/*.app/Info.plist."
         }
