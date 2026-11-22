@@ -1,6 +1,6 @@
 import Foundation
 
-enum IPAInstallProfileError: LocalizedError {
+enum IPAInstallProfileError: LocalizedError, Equatable {
     case missingProfile
     case unreadableProfile
     case expired
