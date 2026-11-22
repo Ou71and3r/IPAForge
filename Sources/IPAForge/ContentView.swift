@@ -38,6 +38,11 @@ struct ContentView: View {
 
                     if let archive = model.archive {
                         archiveCard(archive)
+                        NavigationLink(destination: SigningView(ipaURL: archive.localURL)) {
+                            Label("Подпиши този IPA", systemImage: "signature")
+                                .font(.headline).frame(maxWidth: .infinity).padding(.vertical, 12)
+                        }
+                        .buttonStyle(.borderedProminent)
                     } else {
                         emptyState
                     }
