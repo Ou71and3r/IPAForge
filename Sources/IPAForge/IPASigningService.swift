@@ -102,9 +102,9 @@ enum IPASigningService {
             if identifier == rootIdentifier { continue }
             guard let selected = try selectProfile(for: identifier, from: profiles) else {
                 // Frameworks and resource bundles are not independently provisioned.
-                let isProvisionedBundle = parts.contains(where: {
-                    $0.hasSuffix(".appex") || $0.hasSuffix(".app")
-                })
+                let bundleDirectory = parts.dropLast().last ?? ""
+                let isProvisionedBundle = bundleDirectory.hasSuffix(".appex")
+                    || bundleDirectory.hasSuffix(".app")
                 if isProvisionedBundle {
                     throw IPASigningError.noMatchingProfile(identifier)
                 }
