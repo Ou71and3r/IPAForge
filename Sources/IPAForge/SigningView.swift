@@ -142,7 +142,7 @@ struct SigningView: View {
         ).first else {
             throw CocoaError(.fileNoSuchFile)
         }
-        let directory = applicationSupport.appendingPathComponent("SigningMaterial", isDirectory: true)
+        var directory = applicationSupport.appendingPathComponent("SigningMaterial", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var directoryValues = URLResourceValues()
         directoryValues.isExcludedFromBackup = true
@@ -152,7 +152,7 @@ struct SigningView: View {
             ofItemAtPath: directory.path
         )
 
-        let destination = directory
+        var destination = directory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(expectedExtension)
         try FileManager.default.copyItem(at: sourceURL, to: destination)
