@@ -18,14 +18,11 @@ IPAForge is an iOS app prototype for importing, inspecting, locally signing, and
 
 ## Validation status
 
-Latest GitHub Actions run for commit `c846c7d` (22 November 2026) passed:
-- iOS Simulator build.
-- Archive path security tests.
-- Generic iOS device build.
+The latest GitHub Actions run builds both the iOS Simulator and generic iOS device targets. It also runs the archive-path security tests and the OTA manifest validator tests.
 
-This confirms compilation for the simulator and generic iOS device targets, but does not constitute installation or execution on a physical iPhone.
+CI compilation and unit tests do not constitute installation or execution on a physical iPhone. ZIP64 handling with a real 4 GB-class IPA still requires a dedicated end-to-end device test.
 
-The signing implementation has not yet been validated end-to-end with a real IPA, P12 certificate, and matching provisioning profiles. The signing dependency includes ZIP64 archive reader/writer code, but ZIP64 handling and the motivating 4 GB-class archive still require dedicated end-to-end tests on a real device; source-level support is not proof of successful 4 GB signing.
+The OTA flow starts a loopback HTTP server, streams the IPA from disk in 1 MiB chunks, requests a manifest from the external HTTPS manifest generator, and validates the returned property list before opening the iOS installation handoff. The IPA itself is not uploaded to the manifest service. The local download and final installation still require physical-device validation on the target iOS version.
 
 ## Build
 
@@ -38,12 +35,14 @@ The project is generated with XcodeGen.
 
 The project uses Swift Package Manager to fetch ZIPFoundation and RorkSign.
 
-## Installation limitation
+## Installation
 
-A regular iOS app cannot install arbitrary IPA files through a public system API. Supported distribution paths such as Apple Configurator, TestFlight, or an appropriately hosted OTA manifest must be evaluated separately. IPAForge does not currently claim direct self-installation.
+IPAForge provides an OTA installation handoff for the signed IPA. It validates the embedded provisioning profile and the manifest response before opening the iOS installation flow. Ad Hoc profiles must include the UDID of the iPhone being used; Enterprise profiles do not require a device list.
+
+The installation handoff depends on iOS accepting the local loopback download URL and the external manifest generator being reachable. This flow must be tested on a physical iPhone before it can be considered fully validated.
 
 ## Security
 
 IPA files and signing credentials are intended to remain on-device. Never commit IPA files, P12 files, provisioning profiles, private keys, or passwords. See [SECURITY.md](SECURITY.md).
 
-**Status: prototype.** Simulator/device-target compilation and archive-path security tests pass in CI. Real signing, physical-device execution, ZIP64 handling of very large files, and installation have not yet been demonstrated end-to-end.
+**Status: active development.** CI covers simulator and device-target builds plus automated archive and manifest validation. Physical-device OTA installation and large ZIP64 archive handling remain the final end-to-end validation items.
