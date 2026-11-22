@@ -89,13 +89,21 @@ enum IPAArchiveService {
         var hasPayload = false
         var appNames = Set<String>()
         var infoPlistCount = 0
+        var seenPaths = Set<String>()
 
         for entry in archive {
             entryCount += 1
             guard entryCount <= maximumEntryCount else { throw IPAArchiveError.tooManyEntries }
 
             let path = entry.path
-            try validateArchivePath(path)
+            try IPAArchivePathValidator.validate(path)
+            let collisionKey = IPAArchivePathValidator.collisionKey(for: path)
+            guard seenPaths.insert(collisionKey).inserted else {
+                throw IPAArchiveError.unsafePath(path)
+            }
+            guard entry.type != .symlink else {
+                throw IPAArchiveError.unsafePath(path)
+            }
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
                 throw IPAArchiveError.entrySizeOverflow(path)
             }
@@ -138,17 +146,4 @@ enum IPAArchiveService {
         )
     }
 
-    private static func validateArchivePath(_ path: String) throws {
-        guard !path.isEmpty,
-              !path.hasPrefix("/"),
-              !path.contains("\\"),
-              !path.unicodeScalars.contains(where: { $0.value == 0 }) else {
-            throw IPAArchiveError.unsafePath(path)
-        }
-
-        let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard !components.contains(where: { $0 == ".." || $0 == "." }) else {
-            throw IPAArchiveError.unsafePath(path)
-        }
-    }
 }
