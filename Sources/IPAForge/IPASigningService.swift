@@ -132,7 +132,7 @@ enum IPASigningService {
             fileManager: fm
         )
         let temporaryOutputURL = outputDirectory
-            .appendingPathComponent(".\\(UUID().uuidString).partial")
+            .appendingPathComponent(".\(UUID().uuidString).partial")
             .appendingPathExtension("ipa")
         defer { try? fm.removeItem(at: temporaryOutputURL) }
 
@@ -157,7 +157,7 @@ enum IPASigningService {
     ) -> URL {
         var suffix = 1
         while true {
-            let name = suffix == 1 ? baseName : "\\(baseName)-\\(suffix)"
+            let name = suffix == 1 ? baseName : "\(baseName)-\(suffix)"
             let candidate = directory.appendingPathComponent(name).appendingPathExtension("ipa")
             if !fileManager.fileExists(atPath: candidate.path) {
                 return candidate
