@@ -19,6 +19,8 @@ enum IPAArchiveError: LocalizedError {
     case tooManyEntries
     case expandedSizeLimit
     case unsafePath(String)
+    case symbolicLink(String)
+    case entrySizeOverflow(String)
     case invalidIPA
 
     var errorDescription: String? {
@@ -93,6 +95,12 @@ enum IPAArchiveService {
 
             let path = entry.path
             try validateArchivePath(path)
+            guard entry.type != .symlink else {
+                throw IPAArchiveError.symbolicLink(path)
+            }
+            guard entry.uncompressedSize <= UInt64(Int64.max) else {
+                throw IPAArchiveError.entrySizeOverflow(path)
+            }
 
             let size = Int64(entry.uncompressedSize)
             let (newTotal, overflow) = totalUncompressedSize.addingReportingOverflow(size)
