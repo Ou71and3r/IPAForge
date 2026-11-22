@@ -126,14 +126,19 @@ enum IPASigningService {
         let outputDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Signed", isDirectory: true)
         try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
-        let outputURL = outputDirectory
-            .appendingPathComponent(ipaURL.deletingPathExtension().lastPathComponent + "-signed")
+        let outputURL = uniqueOutputURL(
+            in: outputDirectory,
+            baseName: ipaURL.deletingPathExtension().lastPathComponent + "-signed",
+            fileManager: fm
+        )
+        let temporaryOutputURL = outputDirectory
+            .appendingPathComponent(".\\(UUID().uuidString).partial")
             .appendingPathExtension("ipa")
-        if fm.fileExists(atPath: outputURL.path) { try fm.removeItem(at: outputURL) }
+        defer { try? fm.removeItem(at: temporaryOutputURL) }
 
         try RorkSigner.signIPA(
             at: ipaURL,
-            outputURL: outputURL,
+            outputURL: temporaryOutputURL,
             identity: identity,
             options: AppSigningOptions(
                 bundleIdentifier: rootIdentifier,
@@ -141,7 +146,24 @@ enum IPASigningService {
                 provisioningProfilesByBundleIdentifier: profilesByBundleIdentifier
             )
         )
+        try fm.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
+    }
+
+    private static func uniqueOutputURL(
+        in directory: URL,
+        baseName: String,
+        fileManager: FileManager
+    ) -> URL {
+        var suffix = 1
+        while true {
+            let name = suffix == 1 ? baseName : "\\(baseName)-\\(suffix)"
+            let candidate = directory.appendingPathComponent(name).appendingPathExtension("ipa")
+            if !fileManager.fileExists(atPath: candidate.path) {
+                return candidate
+            }
+            suffix += 1
+        }
     }
 
     private static func selectProfile(
