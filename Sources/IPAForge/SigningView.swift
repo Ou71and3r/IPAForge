@@ -30,7 +30,7 @@ struct SigningView: View {
                     outputURL = nil
                     Task.detached(priority: .userInitiated) {
                         do {
-                            let result = try IPASigningService.sign(ipaURL: ipaURL, p12URL: p12URL, profileURL: profileURL, password: password)
+                            let result = try await IPASigningService.sign(ipaURL: ipaURL, p12URL: p12URL, profileURL: profileURL, password: password)
                             await MainActor.run { outputURL = result; working = false }
                         } catch {
                             await MainActor.run { errorText = error.localizedDescription; working = false }
