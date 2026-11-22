@@ -332,7 +332,13 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             string: "http://127.0.0.1:\(selectedPort.rawValue)/install"
         )!
 
-        self.listener = try NWListener(using: .tcp, on: selectedPort)
+        // Bind exclusively to loopback so the temporary IPA server is not exposed to the local Wi-Fi network.
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(
+            host: .ipv4(.loopback),
+            port: selectedPort
+        )
+        self.listener = try NWListener(using: parameters)
         self.listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }
