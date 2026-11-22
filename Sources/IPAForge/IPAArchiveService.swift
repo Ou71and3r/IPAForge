@@ -63,12 +63,26 @@ enum IPAArchiveService {
 
         let importsDirectory = documents.appendingPathComponent("Imported", isDirectory: true)
         try FileManager.default.createDirectory(at: importsDirectory, withIntermediateDirectories: true)
+        var directoryValues = URLResourceValues()
+        directoryValues.isExcludedFromBackup = true
+        try importsDirectory.setResourceValues(directoryValues)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: importsDirectory.path
+        )
         let destinationURL = importsDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("ipa")
 
         do {
             try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: destinationURL.path
+            )
+            var fileValues = URLResourceValues()
+            fileValues.isExcludedFromBackup = true
+            try destinationURL.setResourceValues(fileValues)
             return try inspect(archiveURL: destinationURL)
         } catch {
             try? FileManager.default.removeItem(at: destinationURL)
