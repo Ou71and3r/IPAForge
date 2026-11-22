@@ -26,7 +26,7 @@ enum IPASigningService {
     // IPA. Reserve room for the extracted tree, output archive, input, and headroom.
     private static let additionalStorageHeadroom: Int64 = 512 * 1024 * 1024
 
-    static func sign(ipaURL: URL, p12URL: URL, profileURL: URL, password: String) async throws -> URL {
+    static func sign(ipaURL: URL, p12URL: URL, profileURL: URL, password: String) throws -> URL {
         let fm = FileManager.default
 
         // Validate the archive and estimate temporary storage before starting a
@@ -79,7 +79,7 @@ enum IPASigningService {
             .appendingPathExtension("ipa")
         if fm.fileExists(atPath: outputURL.path) { try fm.removeItem(at: outputURL) }
 
-        try await RorkSigner.signIPA(
+        try RorkSigner.signIPA(
             at: ipaURL,
             outputURL: outputURL,
             identity: identity,
