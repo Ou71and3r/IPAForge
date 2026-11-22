@@ -109,7 +109,7 @@ enum IPAArchiveService {
             }
 
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
-                throw IPAArchiveError.entrySizeOverflow(path)
+                throw IPAArchiveError.entrySizeOverflow(entry.path)
             }
 
             let size = Int64(entry.uncompressedSize)
@@ -119,7 +119,7 @@ enum IPAArchiveService {
             }
             totalUncompressedSize = newTotal
 
-            let components = path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
+            let components = entry.path.split(separator: "/", omittingEmptySubsequences: true).map(String.init)
             if components.first == "Payload" {
                 hasPayload = true
                 if components.count >= 2, components[1].hasSuffix(".app") {
