@@ -71,9 +71,7 @@ enum IPAArchiveService {
     }
 
     static func inspect(archiveURL: URL) throws -> IPAArchiveSummary {
-        guard let archive = Archive(url: archiveURL, accessMode: .read) else {
-            throw IPAArchiveError.invalidArchive
-        }
+        let archive = try Archive(url: archiveURL, accessMode: .read)
 
         var entryCount = 0
         var totalUncompressedSize: Int64 = 0
