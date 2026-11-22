@@ -8,16 +8,22 @@ IPAForge is an iOS app prototype for importing, inspecting, locally signing, and
 - Imports an `.ipa` file through the iOS document picker and copies it into the app's private Documents/Imported directory.
 - Inspects ZIP entries with ZIPFoundation without extracting the full archive.
 - Reports archive size, entry count, total declared uncompressed size, Payload presence, app bundle names, and Info.plist entries.
-- Rejects unsafe archive paths, more than 200,000 entries, and declared expanded sizes above 20 GiB.
-- Imports P12 and MobileProvision files into the app's private Documents/SigningMaterial directory.
-- Contains an on-device signing flow using the RorkSign package and exports its output through the iOS share sheet.
-- GitHub Actions builds both the iOS Simulator and generic iOS device targets without code signing.
+- Rejects unsafe archive paths, symbolic links, duplicate/colliding paths, more than 200,000 entries, and declared expanded sizes above 20 GiB.
+- Imports P12 and MobileProvision files into the app's private Application Support/SigningMaterial directory. Imported signing material is excluded from backups and stored with complete file protection.
+- Contains an on-device signing flow using the RorkSign package, checks selected provisioning profiles against the signing identity, matches profiles to bundle identifiers, and exports its output through the iOS share sheet.
+- Writes signed output through a temporary file and moves it into place without overwriting an existing signed IPA.
+- GitHub Actions builds both the iOS Simulator and generic iOS device targets without code signing, and runs archive-path security tests on the simulator.
 
 ## Validation status
 
-A successful simulator build has been recorded. A generic iOS device build is now part of CI and must pass before device compilation is considered verified.
+Latest GitHub Actions run for commit `c846c7d` (22 November 2026) passed:
+- iOS Simulator build.
+- Archive path security tests.
+- Generic iOS device build.
 
-The signing implementation has not yet been validated end-to-end with real signing credentials and an IPA. ZIP64 support and the motivating 4 GB-class archive also require dedicated real-file tests; metadata inspection alone is not proof of full ZIP64 signing/repacking support.
+This confirms compilation for the simulator and generic iOS device targets, but does not constitute installation or execution on a physical iPhone.
+
+The signing implementation has not yet been validated end-to-end with a real IPA, P12 certificate, and matching provisioning profiles. ZIP64 support and the motivating 4 GB-class archive also require dedicated real-file tests; metadata inspection alone is not proof of full ZIP64 signing/repacking support.
 
 ## Build
 
@@ -38,4 +44,4 @@ A regular iOS app cannot install arbitrary IPA files through a public system API
 
 IPA files and signing credentials are intended to remain on-device. Never commit IPA files, P12 files, provisioning profiles, private keys, or passwords. See [SECURITY.md](SECURITY.md).
 
-**Status: prototype.** The source includes archive inspection and a signing workflow, but successful signing, ZIP64 handling of very large files, and installation have not yet been demonstrated end-to-end.
+**Status: prototype.** Simulator/device-target compilation and archive-path security tests pass in CI. Real signing, physical-device execution, ZIP64 handling of very large files, and installation have not yet been demonstrated end-to-end.
