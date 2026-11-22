@@ -122,7 +122,7 @@ struct ContentView: View {
                     .foregroundStyle(.orange)
             }
 
-            Text("Това е проверка на ZIP структурата. Подписването все още не е реализирано.")
+            Text("Провери структурата на IPA и премини към подписване с P12 сертификат и MobileProvision.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -146,8 +146,8 @@ struct ContentView: View {
                 .font(.headline)
             roadmapRow("Импортиране и преглед на IPA", complete: true)
             roadmapRow("ZIP64 и големи архиви", complete: false, detail: "Използва се ZIPFoundation; предстоят тестове с реални ZIP64 файлове.")
-            roadmapRow("Импорт на P12 и provisioning profile", complete: false)
-            roadmapRow("Локално подписване на приложения", complete: false)
+            roadmapRow("Импорт на P12 и provisioning profile", complete: true)
+            roadmapRow("Локално подписване на приложения", complete: false, detail: "Добавен е екранът; чака се успешна компилация и тест.")
             roadmapRow("Експорт на подписан IPA", complete: false)
             roadmapRow("Инсталиране директно от приложението", complete: false, detail: "Ограничено от правилата на iOS; ще се оценят реалистичните варианти.")
         }
