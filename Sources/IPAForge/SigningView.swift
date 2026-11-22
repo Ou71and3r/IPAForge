@@ -216,6 +216,19 @@ private struct IPAInstallMetadata {
             throw IPAInstallError.missingAppMetadata
         }
 
+        let appDirectory = entry.path.split(separator: "/").dropLast().joined(separator: "/")
+        guard let profileEntry = archive.first(where: {
+            $0.path == "\(appDirectory)/embedded.mobileprovision"
+        }) else {
+            throw IPAInstallProfileError.missingProfile
+        }
+        let profileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: profileURL) }
+        _ = try archive.extract(profileEntry, to: profileURL)
+        let profileData = try Data(contentsOf: profileURL)
+        try IPAInstallProfileValidator.validate(profileData)
+
         let displayName = (info["CFBundleDisplayName"] as? String)
             ?? (info["CFBundleName"] as? String)
             ?? bundleIdentifier
