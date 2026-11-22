@@ -89,47 +89,25 @@ enum IPAArchiveService {
         var hasPayload = false
         var appNames = Set<String>()
         var infoPlistCount = 0
-        var seenPaths = Set<String>()
-        var seenFiles = Set<String>()
-        var seenDirectories = Set<String>()
+        var pathRegistry = IPAArchivePathRegistry()
 
         for entry in archive {
             entryCount += 1
             guard entryCount <= maximumEntryCount else { throw IPAArchiveError.tooManyEntries }
 
-            let path = entry.path
-            try IPAArchivePathValidator.validate(path)
-            let collisionKey = IPAArchivePathValidator.collisionKey(for: path)
-            guard seenPaths.insert(collisionKey).inserted else {
-                throw IPAArchiveError.unsafePath(path)
-            }
-            guard entry.type != .symlink else {
-                throw IPAArchiveError.unsafePath(path)
-            }
-            let normalizedPath = path.hasSuffix("/") ? String(path.dropLast()) : path
-            let normalizedKey = IPAArchivePathValidator.collisionKey(for: normalizedPath)
-            let pathComponents = normalizedPath.split(separator: "/").map(String.init)
-            var ancestor = ""
-            for component in pathComponents.dropLast() {
-                ancestor = ancestor.isEmpty ? component : ancestor + "/" + component
-                let ancestorKey = IPAArchivePathValidator.collisionKey(for: ancestor)
-                guard !seenFiles.contains(ancestorKey) else {
+            do {
+                try pathRegistry.register(
+                    entry.path,
+                    isDirectory: entry.type == .directory,
+                    isSymbolicLink: entry.type == .symlink
+                )
+            } catch let pathError as IPAArchivePathError {
+                switch pathError {
+                case .unsafePath(let path), .duplicatePath(let path), .symbolicLink(let path):
                     throw IPAArchiveError.unsafePath(path)
                 }
             }
-            if entry.type == .directory {
-                guard !seenFiles.contains(normalizedKey) else {
-                    throw IPAArchiveError.unsafePath(path)
-                }
-                seenDirectories.insert(normalizedKey)
-            } else {
-                guard !seenDirectories.contains(normalizedKey),
-                      !seenFiles.contains(where: { $0.hasPrefix(normalizedKey + "/") }),
-                      !seenDirectories.contains(where: { $0.hasPrefix(normalizedKey + "/") }) else {
-                    throw IPAArchiveError.unsafePath(path)
-                }
-                seenFiles.insert(normalizedKey)
-            }
+
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
                 throw IPAArchiveError.entrySizeOverflow(path)
             }
