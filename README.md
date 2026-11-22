@@ -23,7 +23,7 @@ Latest GitHub Actions run for commit `c846c7d` (22 November 2026) passed:
 
 This confirms compilation for the simulator and generic iOS device targets, but does not constitute installation or execution on a physical iPhone.
 
-The signing implementation has not yet been validated end-to-end with a real IPA, P12 certificate, and matching provisioning profiles. ZIP64 support and the motivating 4 GB-class archive also require dedicated real-file tests; metadata inspection alone is not proof of full ZIP64 signing/repacking support.
+The signing implementation has not yet been validated end-to-end with a real IPA, P12 certificate, and matching provisioning profiles. The signing dependency includes ZIP64 archive reader/writer code, but ZIP64 handling and the motivating 4 GB-class archive still require dedicated end-to-end tests on a real device; source-level support is not proof of successful 4 GB signing.
 
 ## Build
 
