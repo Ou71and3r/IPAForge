@@ -34,7 +34,8 @@ enum IPAArchivePathValidator {
     }
 
     static func collisionKey(for path: String) -> String {
-        path.precomposedStringWithCanonicalMapping
+        let normalized = path.hasSuffix("/") ? String(path.dropLast()) : path
+        return normalized.precomposedStringWithCanonicalMapping
             .folding(options: [.caseInsensitive], locale: Locale(identifier: "en_US_POSIX"))
     }
 }
