@@ -58,6 +58,13 @@ enum IPASigningService {
         let profiles = try profileURLs.map { url -> (url: URL, data: Data, profile: ProvisioningProfile) in
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
             let profile = try RorkSigner.decodeProvisioningProfile(data)
+            // Ensure every selected profile authorizes the private-key identity
+            // before it is considered for a bundle.
+            _ = try RorkSigner.checkProfileCredential(
+                provisioningProfile: profile,
+                credentialData: p12,
+                password: password
+            )
             return (url, data, profile)
         }
 
