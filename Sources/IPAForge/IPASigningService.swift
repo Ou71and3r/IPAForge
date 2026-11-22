@@ -5,18 +5,47 @@ import RorkSign
 enum IPASigningError: LocalizedError {
     case missingPayload
     case missingBundleIdentifier
+    case insufficientStorage(required: Int64, available: Int64)
 
     var errorDescription: String? {
         switch self {
-        case .missingPayload: return "В архива не е открито приложение в Payload."
-        case .missingBundleIdentifier: return "Не може да бъде прочетен Bundle Identifier от Info.plist."
+        case .missingPayload:
+            return "В архива не е открито приложение в Payload."
+        case .missingBundleIdentifier:
+            return "Не може да бъде прочетен Bundle Identifier от Info.plist."
+        case .insufficientStorage(let required, let available):
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            return "Недостатъчно свободно място. Необходими са приблизително \(formatter.string(fromByteCount: required)), налични са \(formatter.string(fromByteCount: available)). Освободи място и опитай отново."
         }
     }
 }
 
 enum IPASigningService {
+    // RorkSign extracts the archive to a temporary workspace and writes a new
+    // IPA. Reserve room for the extracted tree, output archive, input, and headroom.
+    private static let additionalStorageHeadroom: Int64 = 512 * 1024 * 1024
+
     static func sign(ipaURL: URL, p12URL: URL, profileURL: URL, password: String) async throws -> URL {
         let fm = FileManager.default
+
+        // Validate the archive and estimate temporary storage before starting a
+        // potentially multi-gigabyte extraction/repack operation.
+        let summary = try IPAArchiveService.inspect(archiveURL: ipaURL)
+        let (twiceExpanded, overflowA) = summary.uncompressedSize.multipliedReportingOverflow(by: 2)
+        let (withInput, overflowB) = twiceExpanded.addingReportingOverflow(summary.fileSize)
+        let (required, overflowC) = withInput.addingReportingOverflow(additionalStorageHeadroom)
+        guard !overflowA, !overflowB, !overflowC else {
+            throw IPAArchiveError.expandedSizeLimit
+        }
+
+        let storageValues = try ipaURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey])
+        let available = storageValues.volumeAvailableCapacityForImportantUsage
+            ?? Int64(storageValues.volumeAvailableCapacity ?? 0)
+        guard available >= required else {
+            throw IPASigningError.insufficientStorage(required: required, available: available)
+        }
+
         let p12 = try Data(contentsOf: p12URL, options: .mappedIfSafe)
         let profile = try Data(contentsOf: profileURL, options: .mappedIfSafe)
         let identity = try SigningIdentity(pkcs12Data: p12, password: password)
