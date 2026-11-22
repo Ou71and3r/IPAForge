@@ -80,7 +80,7 @@ enum IPASigningService {
         try fm.createDirectory(at: inspectionDirectory, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: inspectionDirectory) }
 
-        func readBundleIdentifier(from entry: Archive.Entry) throws -> String {
+        func readBundleIdentifier(from entry: Entry) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: fileURL) }
             _ = try archive.extract(entry, to: fileURL)
