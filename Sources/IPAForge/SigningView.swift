@@ -17,45 +17,112 @@ struct SigningView: View {
             Section("Файлове за подписване") {
                 LabeledContent("IPA", value: ipaURL.lastPathComponent)
                 Button("Избери P12 сертификат") { choosingP12 = true }
-                if let p12URL { Text(p12URL.lastPathComponent).font(.caption).foregroundStyle(.secondary) }
+                if let p12URL {
+                    Label(p12URL.lastPathComponent, systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 Button("Избери MobileProvision") { choosingProfile = true }
-                if let profileURL { Text(profileURL.lastPathComponent).font(.caption).foregroundStyle(.secondary) }
+                if let profileURL {
+                    Label(profileURL.lastPathComponent, systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 SecureField("Парола на P12", text: $password)
             }
+
             Section {
                 Button {
-                    guard let p12URL, let profileURL else { return }
+                    guard let selectedP12 = p12URL, let selectedProfile = profileURL else { return }
+                    let signingPassword = password
                     working = true
                     errorText = nil
                     outputURL = nil
+
                     Task.detached(priority: .userInitiated) {
                         do {
-                            let result = try await IPASigningService.sign(ipaURL: ipaURL, p12URL: p12URL, profileURL: profileURL, password: password)
-                            await MainActor.run { outputURL = result; working = false }
+                            let result = try await IPASigningService.sign(
+                                ipaURL: ipaURL,
+                                p12URL: selectedP12,
+                                profileURL: selectedProfile,
+                                password: signingPassword
+                            )
+                            await MainActor.run {
+                                outputURL = result
+                                password = ""
+                                working = false
+                            }
                         } catch {
-                            await MainActor.run { errorText = error.localizedDescription; working = false }
+                            await MainActor.run {
+                                errorText = error.localizedDescription
+                                password = ""
+                                working = false
+                            }
                         }
                     }
                 } label: {
                     if working { ProgressView() } else { Text("Подпиши IPA") }
                 }
                 .disabled(p12URL == nil || profileURL == nil || password.isEmpty || working)
+
                 if let errorText { Text(errorText).foregroundStyle(.red) }
                 if let outputURL {
-                    ShareLink(item: outputURL) { Label("Запази / сподели подписания IPA", systemImage: "square.and.arrow.up") }
+                    ShareLink(item: outputURL) {
+                        Label("Запази / сподели подписания IPA", systemImage: "square.and.arrow.up")
+                    }
                 }
             }
+
             Section {
-                Text("P12 сертификатът и provisioning профилът се обработват локално. Паролата не се записва.")
+                Text("P12 сертификатът и provisioning профилът се копират в частната папка на приложението. Паролата се пази само до приключване на операцията.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Подписване")
         .fileImporter(isPresented: $choosingP12, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result { p12URL = urls.first }
+            handleCredentialImport(result, expectedExtension: "p12") { p12URL = $0 }
         }
         .fileImporter(isPresented: $choosingProfile, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result { profileURL = urls.first }
+            handleCredentialImport(result, expectedExtension: "mobileprovision") { profileURL = $0 }
         }
+    }
+
+    private func handleCredentialImport(
+        _ result: Result<[URL], Error>,
+        expectedExtension: String,
+        completion: (URL) -> Void
+    ) {
+        do {
+            guard let selected = try result.get().first else {
+                throw CocoaError(.fileReadNoSuchFile)
+            }
+            let localURL = try copyIntoPrivateStorage(selected, expectedExtension: expectedExtension)
+            completion(localURL)
+            errorText = nil
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func copyIntoPrivateStorage(_ sourceURL: URL, expectedExtension: String) throws -> URL {
+        let hasAccess = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if hasAccess { sourceURL.stopAccessingSecurityScopedResource() }
+        }
+
+        guard sourceURL.pathExtension.lowercased() == expectedExtension else {
+            throw NSError(
+                domain: "IPAForge",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Избери файл с разширение .\(expectedExtension)."]
+            )
+        }
+
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let directory = documents.appendingPathComponent("SigningMaterial", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension(expectedExtension)
+        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        return destination
     }
 }
