@@ -8,6 +8,9 @@ packages:
   ZIPFoundation:
     url: https://github.com/weichsel/ZIPFoundation.git
     from: 0.9.21
+  rork-sign:
+    url: https://github.com/rorkai/rork-sign.git
+    from: 0.6.5
 targets:
   IPAForge:
     type: application
@@ -17,11 +20,13 @@ targets:
     dependencies:
       - package: ZIPFoundation
         product: ZIPFoundation
+      - package: rork-sign
+        product: RorkSign
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.ou71and3r.ipaforge
         PRODUCT_NAME: IPAForge
-        SWIFT_VERSION: "5.9"
+        SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_FILE: Sources/IPAForge/Info.plist
