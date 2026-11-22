@@ -136,13 +136,33 @@ struct SigningView: View {
             )
         }
 
-        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let directory = documents.appendingPathComponent("SigningMaterial", isDirectory: true)
+        guard let applicationSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let directory = applicationSupport.appendingPathComponent("SigningMaterial", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var directoryValues = URLResourceValues()
+        directoryValues.isExcludedFromBackup = true
+        try directory.setResourceValues(directoryValues)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: directory.path
+        )
+
         let destination = directory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(expectedExtension)
         try FileManager.default.copyItem(at: sourceURL, to: destination)
+        try FileManager.default.setAttributes(
+            [.protectionKey: FileProtectionType.complete],
+            ofItemAtPath: destination.path
+        )
+        var fileValues = URLResourceValues()
+        fileValues.isExcludedFromBackup = true
+        try destination.setResourceValues(fileValues)
         return destination
     }
 }
