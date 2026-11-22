@@ -268,7 +268,8 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
         version: String
     ) throws {
         let attributes = try FileManager.default.attributesOfItem(atPath: ipaURL.path)
-        guard (attributes[.size] as? NSNumber)?.int64Value ?? 0 > 0 else {
+        guard let fileSize = (attributes[.size] as? NSNumber)?.int64Value,
+              fileSize > 0 else {
             throw IPAInstallError.fileUnavailable
         }
 
@@ -506,4 +507,3 @@ private struct IPAInstallSafariView: UIViewControllerRepresentable {
         try destination.setResourceValues(fileValues)
         return destination
     }
-}
