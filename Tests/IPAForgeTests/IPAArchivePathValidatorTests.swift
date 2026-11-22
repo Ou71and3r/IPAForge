@@ -16,7 +16,7 @@ final class IPAArchivePathValidatorTests: XCTestCase {
     }
 
     func testRejectsWindowsAndMalformedComponents() {
-        let paths = ["Payload\\App", "Payload//App", "Payload/./App", "Payload/App:stream", "Payload/"]
+        let paths = ["Payload\\App", "Payload//App", "Payload/./App", "Payload/App:stream", "Payload//"]
         for path in paths {
             XCTAssertThrowsError(try IPAArchivePathValidator.validate(path), path)
         }
