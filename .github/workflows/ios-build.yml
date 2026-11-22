@@ -48,12 +48,30 @@ jobs:
         run: brew install xcodegen
       - name: Generate Xcode project
         run: xcodegen generate
-      - name: Build for generic iOS device
-        run: >-
-          xcodebuild
-          -project IPAForge.xcodeproj
-          -scheme IPAForge
-          -sdk iphoneos
-          -destination 'generic/platform=iOS'
-          CODE_SIGNING_ALLOWED=NO
-          build
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project IPAForge.xcodeproj \
+            -scheme IPAForge \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$RUNNER_TEMP/DerivedData/Build/Products/Release-iphoneos/IPAForge.app"
+          test -d "$APP_PATH"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          ditto "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/IPAForge.app"
+          cd "$RUNNER_TEMP/ipa"
+          /usr/bin/zip -qry "$RUNNER_TEMP/IPAForge-unsigned.ipa" Payload
+          test -s "$RUNNER_TEMP/IPAForge-unsigned.ipa"
+      - name: Upload unsigned IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IPAForge-unsigned-ipa
+          path: ${{ runner.temp }}/IPAForge-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
