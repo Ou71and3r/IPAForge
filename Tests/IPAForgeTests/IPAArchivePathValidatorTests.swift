@@ -33,4 +33,43 @@ final class IPAArchivePathValidatorTests: XCTestCase {
             IPAArchivePathValidator.collisionKey(for: "payload/Cafe\u{0301}.APP/INFO.PLIST")
         )
     }
+    func testRegistryRejectsFileAsParentOfAnotherEntry() throws {
+        var registry = IPAArchivePathRegistry()
+        try registry.register("Payload/Example.app/Info.plist", isDirectory: false)
+        XCTAssertThrowsError(
+            try registry.register("Payload/Example.app/Info.plist/child", isDirectory: false)
+        )
+    }
+
+    func testRegistryRejectsFileReplacingExistingDirectoryTree() throws {
+        var registry = IPAArchivePathRegistry()
+        try registry.register("Payload/Example.app/Frameworks/Kit.framework/", isDirectory: true)
+        XCTAssertThrowsError(
+            try registry.register("Payload/Example.app/Frameworks/Kit.framework", isDirectory: false)
+        )
+    }
+
+    func testRegistryAllowsExplicitDirectoryAfterChildFile() throws {
+        var registry = IPAArchivePathRegistry()
+        try registry.register("Payload/Example.app/Frameworks/Kit", isDirectory: false)
+        XCTAssertNoThrow(
+            try registry.register("Payload/Example.app/Frameworks/", isDirectory: true)
+        )
+    }
+
+    func testRegistryRejectsCaseInsensitiveDuplicatePaths() throws {
+        var registry = IPAArchivePathRegistry()
+        try registry.register("Payload/Example.app/Info.plist", isDirectory: false)
+        XCTAssertThrowsError(
+            try registry.register("payload/example.app/INFO.PLIST", isDirectory: false)
+        )
+    }
+
+    func testRegistryRejectsSymbolicLinks() {
+        var registry = IPAArchivePathRegistry()
+        XCTAssertThrowsError(
+            try registry.register("Payload/Example.app/link", isDirectory: false, isSymbolicLink: true)
+        )
+    }
+
 }
