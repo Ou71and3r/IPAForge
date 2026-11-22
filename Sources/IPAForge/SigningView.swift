@@ -4,10 +4,10 @@ import UniformTypeIdentifiers
 struct SigningView: View {
     let ipaURL: URL
     @State private var p12URL: URL?
-    @State private var profileURL: URL?
+    @State private var profileURLs: [URL] = []
     @State private var password = ""
     @State private var choosingP12 = false
-    @State private var choosingProfile = false
+    @State private var choosingProfiles = false
     @State private var working = false
     @State private var outputURL: URL?
     @State private var errorText: String?
@@ -21,17 +21,33 @@ struct SigningView: View {
                     Label(p12URL.lastPathComponent, systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button("Избери MobileProvision") { choosingProfile = true }
-                if let profileURL {
-                    Label(profileURL.lastPathComponent, systemImage: "checkmark.circle.fill")
+                Button("Добави MobileProvision профили") { choosingProfiles = true }
+                if profileURLs.isEmpty {
+                    Text("Не са избрани provisioning профили.")
                         .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    ForEach(profileURLs, id: \.self) { url in
+                        HStack {
+                            Label(url.lastPathComponent, systemImage: "checkmark.circle.fill")
+                                .font(.caption)
+                            Spacer()
+                            Button(role: .destructive) {
+                                profileURLs.removeAll { $0 == url }
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("Премахни профила")
+                        }
+                    }
                 }
                 SecureField("Парола на P12", text: $password)
             }
 
             Section {
                 Button {
-                    guard let selectedP12 = p12URL, let selectedProfile = profileURL else { return }
+                    guard let selectedP12 = p12URL, !profileURLs.isEmpty else { return }
+                    let selectedProfiles = profileURLs
                     let signingPassword = password
                     working = true
                     errorText = nil
@@ -42,7 +58,7 @@ struct SigningView: View {
                             let result = try IPASigningService.sign(
                                 ipaURL: ipaURL,
                                 p12URL: selectedP12,
-                                profileURL: selectedProfile,
+                                profileURLs: selectedProfiles,
                                 password: signingPassword
                             )
                             await MainActor.run {
@@ -61,7 +77,7 @@ struct SigningView: View {
                 } label: {
                     if working { ProgressView() } else { Text("Подпиши IPA") }
                 }
-                .disabled(p12URL == nil || profileURL == nil || password.isEmpty || working)
+                .disabled(p12URL == nil || profileURLs.isEmpty || password.isEmpty || working)
 
                 if let errorText { Text(errorText).foregroundStyle(.red) }
                 if let outputURL {
@@ -72,30 +88,34 @@ struct SigningView: View {
             }
 
             Section {
-                Text("P12 сертификатът и provisioning профилът се копират в частната папка на приложението. Паролата се пази само до приключване на операцията.")
+                Text("Можеш да добавиш отделни профили за основното приложение, разширенията и Watch приложенията. IPAForge ги съпоставя по разрешения Bundle Identifier. Паролата се пази само до приключване на операцията.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Подписване")
         .fileImporter(isPresented: $choosingP12, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            handleCredentialImport(result, expectedExtension: "p12") { p12URL = $0 }
+            handleCredentialImport(result, expectedExtension: "p12") { p12URL = $0[0] }
         }
-        .fileImporter(isPresented: $choosingProfile, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            handleCredentialImport(result, expectedExtension: "mobileprovision") { profileURL = $0 }
+        .fileImporter(isPresented: $choosingProfiles, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
+            handleCredentialImport(result, expectedExtension: "mobileprovision") { imported in
+                let known = Set(profileURLs)
+                profileURLs.append(contentsOf: imported.filter { !known.contains($0) })
+            }
         }
     }
 
     private func handleCredentialImport(
         _ result: Result<[URL], Error>,
         expectedExtension: String,
-        completion: (URL) -> Void
+        completion: ([URL]) -> Void
     ) {
         do {
-            guard let selected = try result.get().first else {
-                throw CocoaError(.fileReadNoSuchFile)
+            let selectedFiles = try result.get()
+            guard !selectedFiles.isEmpty else { throw CocoaError(.fileReadNoSuchFile) }
+            let localURLs = try selectedFiles.map {
+                try copyIntoPrivateStorage($0, expectedExtension: expectedExtension)
             }
-            let localURL = try copyIntoPrivateStorage(selected, expectedExtension: expectedExtension)
-            completion(localURL)
+            completion(localURLs)
             errorText = nil
         } catch {
             errorText = error.localizedDescription
