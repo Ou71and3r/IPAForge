@@ -5,7 +5,7 @@ struct ContentView: View {
     @StateObject private var model = IPAImportViewModel()
 
     var body: some View {
-        NavigationStack {
+        NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
