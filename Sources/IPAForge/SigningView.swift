@@ -101,7 +101,10 @@ struct SigningView: View {
                             }
                         }
                         .disabled(preparingInstall || working)
-                        Text("Инсталацията използва OTA механизма на iOS. Manifest услугата получава метаданните на приложението и локалния адрес за изтегляне; самият IPA остава на устройството.")
+                        Text("При Ad Hoc профил регистрирай UDID на този iPhone. Enterprise профилът не изисква списък с устройства.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("IPA файлът се обслужва локално от устройството; външната услуга генерира само manifest.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -247,6 +250,7 @@ private enum IPAInstallError: LocalizedError {
     case missingAppMetadata
     case invalidServerResponse
     case fileUnavailable
+    case manifestServiceUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -256,6 +260,8 @@ private enum IPAInstallError: LocalizedError {
             return "Заявката за инсталиране е невалидна."
         case .fileUnavailable:
             return "Подписаният IPA вече не е наличен."
+        case .manifestServiceUnavailable:
+            return "Услугата за генериране на manifest не отговори коректно. Провери интернет връзката и опитай отново."
         }
     }
 }
@@ -267,9 +273,11 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.ou71and3r.ipaforge.ota")
     private let ipaURL: URL
     private let redirectHTML: Data
+    private let manifestURL: URL
+    private let expectedBundleIdentifier: String
+    private let expectedDisplayName: String
+    private let expectedVersion: String
     private let port: NWEndpoint.Port
-    private let startLock = NSLock()
-    private var didCompleteStart = false
 
     let installPageURL: URL
 
@@ -305,6 +313,10 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
               ) else {
             throw IPAInstallError.invalidServerResponse
         }
+        self.manifestURL = relayURL
+        self.expectedBundleIdentifier = bundleIdentifier
+        self.expectedDisplayName = displayName
+        self.expectedVersion = version
 
         let installURL = "itms-services://?action=download-manifest&url=\(encodedRelayURL)"
         let html = """
@@ -328,11 +340,7 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
 
     func start() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            listener.stateUpdateHandler = { [weak self] state in
-                guard let self else {
-                    continuation.resume(throwing: CancellationError())
-                    return
-                }
+            listener.stateUpdateHandler = { state in
                 switch state {
                 case .ready:
                     self.listener.stateUpdateHandler = nil
@@ -349,24 +357,31 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             }
             listener.start(queue: queue)
         }
+
+        do {
+            var request = URLRequest(url: manifestURL)
+            request.timeoutInterval = 15
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else {
+                throw IPAInstallError.manifestServiceUnavailable
+            }
+            try IPAInstallManifestValidator.validate(
+                data,
+                expectedPackageURL: URL(string: "http://127.0.0.1:\(port.rawValue)/app.ipa")!,
+                bundleIdentifier: expectedBundleIdentifier,
+                displayName: expectedDisplayName,
+                version: expectedVersion
+            )
+        } catch {
+            listener.cancel()
+            throw error
+        }
     }
 
     func stop() {
         listener.cancel()
-    }
-
-    private func finishStart(
-        _ result: Result<Void, Error>,
-        completion: @escaping (Result<Void, Error>) -> Void
-    ) {
-        startLock.lock()
-        guard !didCompleteStart else {
-            startLock.unlock()
-            return
-        }
-        didCompleteStart = true
-        startLock.unlock()
-        completion(result)
     }
 
     private func handle(_ connection: NWConnection) {
