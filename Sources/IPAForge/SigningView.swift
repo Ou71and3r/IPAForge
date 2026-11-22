@@ -39,7 +39,7 @@ struct SigningView: View {
 
                     Task.detached(priority: .userInitiated) {
                         do {
-                            let result = try await IPASigningService.sign(
+                            let result = try IPASigningService.sign(
                                 ipaURL: ipaURL,
                                 p12URL: selectedP12,
                                 profileURL: selectedProfile,
