@@ -165,17 +165,16 @@ struct SigningView: View {
                 version: metadata.version
             )
             installServer = server
-            server.start { result in
-                DispatchQueue.main.async {
+            Task { @MainActor in
+                do {
+                    try await server.start()
                     preparingInstall = false
-                    switch result {
-                    case .success:
-                        showingInstallSheet = true
-                    case .failure(let error):
-                        installServer?.stop()
-                        installServer = nil
-                        errorText = error.localizedDescription
-                    }
+                    showingInstallSheet = true
+                } catch {
+                    preparingInstall = false
+                    installServer?.stop()
+                    installServer = nil
+                    errorText = error.localizedDescription
                 }
             }
         } catch {
@@ -314,19 +313,29 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
         }
     }
 
-    func start(completion: @escaping (Result<Void, Error>) -> Void) {
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            switch state {
-            case .ready:
-                self.finishStart(.success(()), completion: completion)
-            case .failed(let error):
-                self.finishStart(.failure(error), completion: completion)
-            default:
-                break
+    func start() async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            listener.stateUpdateHandler = { [weak self] state in
+                guard let self else {
+                    continuation.resume(throwing: CancellationError())
+                    return
+                }
+                switch state {
+                case .ready:
+                    self.listener.stateUpdateHandler = nil
+                    continuation.resume()
+                case .failed(let error):
+                    self.listener.stateUpdateHandler = nil
+                    continuation.resume(throwing: error)
+                case .cancelled:
+                    self.listener.stateUpdateHandler = nil
+                    continuation.resume(throwing: CancellationError())
+                default:
+                    break
+                }
             }
+            listener.start(queue: queue)
         }
-        listener.start(queue: queue)
     }
 
     func stop() {
