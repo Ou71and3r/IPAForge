@@ -8,7 +8,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-simulator:
+    name: Build for iOS Simulator
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -23,5 +24,24 @@ jobs:
           -scheme IPAForge
           -sdk iphonesimulator
           -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
+
+  build-device:
+    name: Build for physical iOS devices
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: xcodegen generate
+      - name: Build for generic iOS device
+        run: >-
+          xcodebuild
+          -project IPAForge.xcodeproj
+          -scheme IPAForge
+          -sdk iphoneos
+          -destination 'generic/platform=iOS'
           CODE_SIGNING_ALLOWED=NO
           build
