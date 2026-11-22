@@ -90,6 +90,8 @@ enum IPAArchiveService {
         var appNames = Set<String>()
         var infoPlistCount = 0
         var seenPaths = Set<String>()
+        var seenFiles = Set<String>()
+        var seenDirectories = Set<String>()
 
         for entry in archive {
             entryCount += 1
@@ -103,6 +105,28 @@ enum IPAArchiveService {
             }
             guard entry.type != .symlink else {
                 throw IPAArchiveError.unsafePath(path)
+            }
+            let normalizedPath = path.hasSuffix("/") ? String(path.dropLast()) : path
+            let pathComponents = normalizedPath.split(separator: "/").map(String.init)
+            var ancestor = ""
+            for component in pathComponents.dropLast() {
+                ancestor = ancestor.isEmpty ? component : ancestor + "/" + component
+                guard !seenFiles.contains(ancestor) else {
+                    throw IPAArchiveError.unsafePath(path)
+                }
+            }
+            if entry.type == .directory {
+                guard !seenFiles.contains(normalizedPath) else {
+                    throw IPAArchiveError.unsafePath(path)
+                }
+                seenDirectories.insert(normalizedPath)
+            } else {
+                guard !seenDirectories.contains(normalizedPath),
+                      !seenFiles.contains(where: { $0.hasPrefix(normalizedPath + "/") }),
+                      !seenDirectories.contains(where: { $0.hasPrefix(normalizedPath + "/") }) else {
+                    throw IPAArchiveError.unsafePath(path)
+                }
+                seenFiles.insert(normalizedPath)
             }
             guard entry.uncompressedSize <= UInt64(Int64.max) else {
                 throw IPAArchiveError.entrySizeOverflow(path)
