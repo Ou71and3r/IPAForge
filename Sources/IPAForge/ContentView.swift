@@ -68,13 +68,19 @@ struct ContentView: View {
     }
 
     private var emptyState: some View {
-        ContentUnavailableView(
-            "Няма избран IPA файл",
-            systemImage: "archivebox",
-            description: Text("Избери IPA от приложението Files, за да провериш съдържанието му.")
-        )
+        VStack(spacing: 12) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 42))
+                .foregroundStyle(.secondary)
+            Text("Няма избран IPA файл")
+                .font(.headline)
+            Text("Избери IPA от приложението Files, за да провериш съдържанието му.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 20)
+        .padding(.vertical, 28)
     }
 
     private func archiveCard(_ archive: IPAArchiveSummary) -> some View {
