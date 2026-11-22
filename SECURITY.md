@@ -4,6 +4,7 @@ IPAForge processes IPA archives and signing credentials locally on the device.
 
 - Never commit IPA files, P12 certificates, private keys, provisioning profiles, or passwords.
 - Do not upload user archives or signing material to a server.
+- Imported IPA archives and signed IPA outputs are stored in the app's private Documents directories, excluded from backups, and protected with complete file protection.
 - The P12 and provisioning profile import flow copies selected files into the app's private Application Support/SigningMaterial directory.
 - Signing extraction/repacking uses a separate private Application Support/SigningWorkspaces directory, excluded from backups; each operation workspace is removed after signing completes or fails.
 - The signing-material directory and imported credential files are excluded from device backups and assigned complete file protection.
