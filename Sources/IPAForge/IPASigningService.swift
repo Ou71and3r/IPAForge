@@ -157,6 +157,11 @@ enum IPASigningService {
             [.protectionKey: FileProtectionType.complete],
             ofItemAtPath: workspaceRoot.path
         )
+        cleanupStaleArtifacts(
+            in: workspaceRoot,
+            outputDirectory: outputDirectory,
+            fileManager: fm
+        )
 
         let operationWorkspace = workspaceRoot.appendingPathComponent(
             UUID().uuidString,
@@ -191,6 +196,49 @@ enum IPASigningService {
 
         try fm.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
+    }
+
+    /// Removes abandoned workspaces and hidden partial outputs left behind if
+    /// the app was terminated before the normal defer-based cleanup ran.
+    private static func cleanupStaleArtifacts(
+        in workspaceRoot: URL,
+        outputDirectory: URL,
+        fileManager: FileManager
+    ) {
+        let cutoff = Date().addingTimeInterval(-24 * 60 * 60)
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .contentModificationDateKey]
+
+        if let workspaces = try? fileManager.contentsOfDirectory(
+            at: workspaceRoot,
+            includingPropertiesForKeys: Array(keys),
+            options: [.skipsHiddenFiles]
+        ) {
+            for workspace in workspaces {
+                let values = try? workspace.resourceValues(forKeys: keys)
+                guard values?.isDirectory == true,
+                      let modified = values?.contentModificationDate,
+                      modified < cutoff else {
+                    continue
+                }
+                try? fileManager.removeItem(at: workspace)
+            }
+        }
+
+        if let outputs = try? fileManager.contentsOfDirectory(
+            at: outputDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: []
+        ) {
+            for partial in outputs where partial.lastPathComponent.hasPrefix(".")
+                && partial.lastPathComponent.hasSuffix(".partial.ipa") {
+                let values = try? partial.resourceValues(forKeys: [.contentModificationDateKey])
+                guard let modified = values?.contentModificationDate,
+                      modified < cutoff else {
+                    continue
+                }
+                try? fileManager.removeItem(at: partial)
+            }
+        }
     }
 
     private static func uniqueOutputURL(
