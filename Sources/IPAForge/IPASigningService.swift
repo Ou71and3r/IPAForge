@@ -126,7 +126,7 @@ enum IPASigningService {
             profilesByBundleIdentifier[identifier] = selected.data
         }
 
-        let outputDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var outputDirectory = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Signed", isDirectory: true)
         try fm.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
         var outputDirectoryValues = URLResourceValues()
@@ -141,7 +141,7 @@ enum IPASigningService {
             baseName: ipaURL.deletingPathExtension().lastPathComponent + "-signed",
             fileManager: fm
         )
-        let temporaryOutputURL = outputDirectory
+        var temporaryOutputURL = outputDirectory
             .appendingPathComponent(".\(UUID().uuidString).partial")
             .appendingPathExtension("ipa")
         defer { try? fm.removeItem(at: temporaryOutputURL) }
@@ -152,7 +152,7 @@ enum IPASigningService {
         ).first else {
             throw IPAArchiveError.noDocumentsDirectory
         }
-        let workspaceRoot = applicationSupport.appendingPathComponent(
+        var workspaceRoot = applicationSupport.appendingPathComponent(
             "SigningWorkspaces",
             isDirectory: true
         )
