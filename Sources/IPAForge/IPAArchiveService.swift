@@ -61,7 +61,7 @@ enum IPAArchiveService {
             throw IPAArchiveError.noDocumentsDirectory
         }
 
-        let importsDirectory = documents.appendingPathComponent("Imported", isDirectory: true)
+        var importsDirectory = documents.appendingPathComponent("Imported", isDirectory: true)
         try FileManager.default.createDirectory(at: importsDirectory, withIntermediateDirectories: true)
         var directoryValues = URLResourceValues()
         directoryValues.isExcludedFromBackup = true
@@ -70,7 +70,7 @@ enum IPAArchiveService {
             [.protectionKey: FileProtectionType.complete],
             ofItemAtPath: importsDirectory.path
         )
-        let destinationURL = importsDirectory
+        var destinationURL = importsDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension("ipa")
 
