@@ -1,0 +1,20 @@
+# Xcode
+.DS_Store
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.p12
+*.mobileprovision
+*.cer
+*.p8
+*.pem
+*.key
+
+# XcodeGen
+*.xcodeproj/
+*.xcworkspace/

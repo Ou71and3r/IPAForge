@@ -1,0 +1,158 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct ContentView: View {
+    @StateObject private var model = IPAImportViewModel()
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    header
+
+                    Button {
+                        model.isImporterPresented = true
+                    } label: {
+                        Label("Избери IPA файл", systemImage: "doc.badge.plus")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isWorking)
+
+                    if model.isWorking {
+                        HStack(spacing: 12) {
+                            ProgressView()
+                            Text("Импортиране и анализиране на архива…")
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.vertical, 8)
+                    }
+
+                    if let error = model.errorMessage {
+                        Label(error, systemImage: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.red)
+                            .font(.subheadline)
+                    }
+
+                    if let archive = model.archive {
+                        archiveCard(archive)
+                    } else {
+                        emptyState
+                    }
+
+                    roadmap
+                }
+                .padding()
+            }
+            .navigationTitle("IPAForge")
+            .navigationBarTitleDisplayMode(.inline)
+            .fileImporter(
+                isPresented: $model.isImporterPresented,
+                allowedContentTypes: [.data, .zip],
+                allowsMultipleSelection: false,
+                onCompletion: model.handleImport
+            )
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Твоят IPA инструмент.")
+                .font(.largeTitle.bold())
+            Text("Локална обработка на IPA архиви. Файловете и сертификатите остават на устройството.")
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView(
+            "Няма избран IPA файл",
+            systemImage: "archivebox",
+            description: Text("Избери IPA от приложението Files, за да провериш съдържанието му.")
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
+    private func archiveCard(_ archive: IPAArchiveSummary) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("Архивът е прочетен", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Spacer()
+                ShareLink(item: archive.localURL) {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Сподели оригиналния IPA")
+            }
+
+            Text(archive.fileName)
+                .font(.headline)
+                .textSelection(.enabled)
+
+            Divider()
+
+            metric("Размер на файла", value: archive.fileSize.formatted(.byteCount(style: .file)))
+            metric("Записи в архива", value: archive.entryCount.formatted())
+            metric("Общ разархивиран размер", value: archive.uncompressedSize.formatted(.byteCount(style: .file)))
+            metric("Папка Payload", value: archive.hasPayload ? "Намерена" : "Не е намерена")
+            metric("Приложения .app", value: archive.appBundleNames.isEmpty ? "Не са открити" : archive.appBundleNames.joined(separator: ", "))
+
+            if archive.infoPlistCount > 0 {
+                Label("Открити Info.plist: \(archive.infoPlistCount)", systemImage: "checkmark.seal")
+                    .font(.subheadline)
+                    .foregroundStyle(.green)
+            } else {
+                Label("Не е открит Info.plist в Payload", systemImage: "exclamationmark.circle")
+                    .font(.subheadline)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Това е проверка на ZIP структурата. Подписването все още не е реализирано.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .padding()
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private func metric(_ title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value).multilineTextAlignment(.trailing)
+                .fontWeight(.medium)
+        }
+        .font(.subheadline)
+    }
+
+    private var roadmap: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("План на разработката")
+                .font(.headline)
+            roadmapRow("Импортиране и преглед на IPA", complete: true)
+            roadmapRow("ZIP64 и големи архиви", complete: false, detail: "Използва се ZIPFoundation; предстоят тестове с реални ZIP64 файлове.")
+            roadmapRow("Импорт на P12 и provisioning profile", complete: false)
+            roadmapRow("Локално подписване на приложения", complete: false)
+            roadmapRow("Експорт на подписан IPA", complete: false)
+            roadmapRow("Инсталиране директно от приложението", complete: false, detail: "Ограничено от правилата на iOS; ще се оценят реалистичните варианти.")
+        }
+        .padding(.top, 8)
+    }
+
+    private func roadmapRow(_ title: String, complete: Bool, detail: String? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label(title, systemImage: complete ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(complete ? .green : .secondary)
+            if let detail {
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 28)
+            }
+        }
+    }
+}

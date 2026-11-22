@@ -1,0 +1,29 @@
+name: IPAForge
+options:
+  bundleIdPrefix: com.ou71and3r
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+packages:
+  ZIPFoundation:
+    url: https://github.com/weichsel/ZIPFoundation.git
+    from: 0.9.21
+targets:
+  IPAForge:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/IPAForge
+    dependencies:
+      - package: ZIPFoundation
+        product: ZIPFoundation
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.ou71and3r.ipaforge
+        PRODUCT_NAME: IPAForge
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: Sources/IPAForge/Info.plist
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""

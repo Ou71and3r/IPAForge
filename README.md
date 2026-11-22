@@ -1,25 +1,42 @@
 # IPAForge
 
-An on-device iOS IPA import and signing utility.
+IPAForge is an iOS app project for importing, inspecting, locally signing, and exporting IPA files.
 
-## Project goals
+## Current implementation
 
-- Import IPA files from the iOS Files app.
-- Support large ZIP and ZIP64 archives using streaming extraction.
-- Sign app bundles locally with a user-provided P12 certificate and provisioning profile.
-- Preserve required entitlements, embedded provisioning profiles, frameworks, extensions, and nested code signatures.
-- Export the signed IPA back to Files.
+- SwiftUI iOS application scaffold.
+- Imports an `.ipa` file through the iOS document picker.
+- Copies the selected file into the app's private Documents/Imported directory.
+- Opens and enumerates the archive with [ZIPFoundation](https://github.com/weichsel/ZIPFoundation).
+- Reports archive size, entry count, total uncompressed size, Payload presence, app bundle names, and Info.plist entries.
+- Includes a macOS GitHub Actions build workflow.
 
-## Security principles
+The archive library advertises large-file support and deterministic memory consumption. ZIP64 compatibility still needs verification against real-world ZIP64 test archives, including the 4 GB-class file that motivated this project.
 
-- IPA files and signing credentials stay on the device.
-- Never upload certificates, private keys, provisioning profiles, or IPA contents to a server.
-- Store private-key material securely and avoid logging secrets.
+## Build
 
-## Platform limitations
+The project is generated with XcodeGen.
 
-Installing arbitrary IPA files directly from a regular iOS app is restricted by iOS. The initial scope is local signing and export; installation options must be evaluated separately and must not be represented as guaranteed.
+1. Install Xcode and XcodeGen.
+2. Run `xcodegen generate` in the repository root.
+3. Open `IPAForge.xcodeproj` in Xcode.
+4. Select an iPhone simulator or a connected iPhone and build.
+
+The project uses Swift Package Manager to fetch ZIPFoundation.
+
+## Roadmap
+
+1. Validate ZIP64 reading and large-file behavior with test fixtures.
+2. Add safe, streaming extraction with path traversal and disk-space protections.
+3. Add local P12 and provisioning-profile import with Keychain-backed secret handling.
+4. Implement and test Mach-O / bundle signing, including nested frameworks and extensions.
+5. Repackage and export the signed IPA.
+6. Evaluate supported installation workflows separately; iOS does not expose a general public API for installing arbitrary IPA files from a regular app.
+
+## Security
+
+IPA files and signing credentials must remain on-device. Never commit IPA files, P12 files, provisioning profiles, private keys, or passwords. See [SECURITY.md](SECURITY.md).
 
 ## Status
 
-Project initialized. Implementation and device testing are pending.
+**Prototype 0.1.0.** IPA import and archive inspection are implemented in source. Signing, repackaging, and direct installation are not implemented yet.
