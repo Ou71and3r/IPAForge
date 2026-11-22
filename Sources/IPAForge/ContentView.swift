@@ -147,7 +147,7 @@ struct ContentView: View {
             roadmapRow("Импортиране и преглед на IPA", complete: true)
             roadmapRow("ZIP64 и големи архиви", complete: false, detail: "Използва се ZIPFoundation; предстоят тестове с реални ZIP64 файлове.")
             roadmapRow("Импорт на P12 и provisioning profile", complete: true)
-            roadmapRow("Локално подписване на приложения", complete: false, detail: "Добавен е екранът; чака се успешна компилация и тест.")
+            roadmapRow("Локално подписване на приложения", complete: false, detail: "Компилацията за Simulator и iOS устройство минава; предстои тест с реален IPA, P12 и provisioning профили.")
             roadmapRow("Експорт на подписан IPA", complete: false)
             roadmapRow("Инсталиране директно от приложението", complete: false, detail: "Ограничено от правилата на iOS; ще се оценят реалистичните варианти.")
         }
