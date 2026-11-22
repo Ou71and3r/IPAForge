@@ -55,7 +55,7 @@ struct ContentView: View {
             .navigationBarTitleDisplayMode(.inline)
             .fileImporter(
                 isPresented: $model.isImporterPresented,
-                allowedContentTypes: [.data, .zip],
+                allowedContentTypes: [.item],
                 allowsMultipleSelection: false,
                 onCompletion: model.handleImport
             )
