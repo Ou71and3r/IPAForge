@@ -179,13 +179,14 @@ private struct IPAFilePicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let ipaType = UTType("com.apple.itunes.ipa")
-            ?? UTType(filenameExtension: "ipa", conformingTo: .zip)
-            ?? .zip
+        // IPA is a ZIP-based byte stream. Use the broad data type here because
+        // Files providers don't always expose the same custom UTI for .ipa files.
+        // The importer validates the .ipa extension after the user selects it.
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [ipaType],
+            forOpeningContentTypes: [.data],
             asCopy: false
         )
+        picker.shouldShowFileExtensions = true
         picker.allowsMultipleSelection = false
         picker.delegate = context.coordinator
         return picker
