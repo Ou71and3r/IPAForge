@@ -53,12 +53,10 @@ struct ContentView: View {
             }
             .navigationTitle("IPAForge")
             .navigationBarTitleDisplayMode(.inline)
-            .fileImporter(
-                isPresented: $model.isImporterPresented,
-                allowedContentTypes: [.item],
-                allowsMultipleSelection: false,
-                onCompletion: model.handleImport
-            )
+            .sheet(isPresented: $model.isImporterPresented) {
+                IPAFilePicker(onCompletion: model.handleImport)
+                    .ignoresSafeArea()
+            }
         }
     }
 
@@ -164,6 +162,49 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 28)
             }
+        }
+    }
+}
+
+
+private struct IPAFilePicker: UIViewControllerRepresentable {
+    let onCompletion: (Result<[URL], Error>) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCompletion: onCompletion)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.item],
+            asCopy: false
+        )
+        picker.allowsMultipleSelection = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(
+        _ uiViewController: UIDocumentPickerViewController,
+        context: Context
+    ) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let onCompletion: (Result<[URL], Error>) -> Void
+
+        init(onCompletion: @escaping (Result<[URL], Error>) -> Void) {
+            self.onCompletion = onCompletion
+        }
+
+        func documentPicker(
+            _ controller: UIDocumentPickerViewController,
+            didPickDocumentsAt urls: [URL]
+        ) {
+            onCompletion(.success(urls))
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCompletion(.success([]))
         }
     }
 }
