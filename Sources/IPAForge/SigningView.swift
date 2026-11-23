@@ -9,6 +9,7 @@ struct SigningView: View {
     @State private var p12URL: URL?
     @State private var profileURLs: [URL] = []
     @State private var password = ""
+    @State private var removeUnsupportedExtensions = false
     @State private var credentialPicker: CredentialPickerMode?
     @State private var working = false
     @State private var outputURL: URL?
@@ -54,6 +55,14 @@ struct SigningView: View {
                     .disabled(working)
             }
 
+            Section("Допълнителни опции") {
+                Toggle("Премахни неподдържаните Widget и Notification разширения", isOn: $removeUnsupportedExtensions)
+                    .disabled(working)
+                Text("Премахва само homewidget.appex и notification.appex, когато избраните профили не ги разрешават. Основното приложение се запазва. Widget и разширената обработка на известия няма да работят.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section {
                 Button {
                     guard let selectedP12 = p12URL, !profileURLs.isEmpty else { return }
@@ -69,7 +78,8 @@ struct SigningView: View {
                                 ipaURL: ipaURL,
                                 p12URL: selectedP12,
                                 profileURLs: selectedProfiles,
-                                password: signingPassword
+                                password: signingPassword,
+                                removeUnsupportedExtensions: removeUnsupportedExtensions
                             )
                             await MainActor.run {
                                 outputURL = result
