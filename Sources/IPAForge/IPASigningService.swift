@@ -114,8 +114,12 @@ enum IPASigningService {
                 let candidateArchive = try Archive(url: signingInputURL, accessMode: .read)
                 let extensionInfoEntries = candidateArchive.filter { entry in
                     let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
-                    return parts.last == "Info.plist"
-                        && parts.contains(where: { $0 == "homewidget.appex" || $0 == "notification.appex" })
+                    guard parts.count >= 4, parts.last == "Info.plist",
+                          let bundleDirectory = parts.dropLast().last else {
+                        return false
+                    }
+                    return bundleDirectory == "homewidget.appex"
+                        || bundleDirectory == "notification.appex"
                 }
                 for entry in extensionInfoEntries {
                     let identifier = try readBundleIdentifier(from: entry, in: candidateArchive)
@@ -234,8 +238,12 @@ enum IPASigningService {
 
         var profilesByBundleIdentifier: [String: Data] = [:]
         for entry in readArchive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
-            let parts = entry.path.split(separator: "/")
-            guard parts.count >= 4 else { continue }
+            let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
+            guard parts.count >= 4,
+                  let bundleDirectory = parts.dropLast().last,
+                  bundleDirectory.hasSuffix(".app") || bundleDirectory.hasSuffix(".appex") else {
+                continue
+            }
             let identifier = try readBundleIdentifierFromReadArchive(entry)
             if identifier == rootIdentifier { continue }
             guard let selected = try selectProfile(for: identifier, from: profiles) else {
