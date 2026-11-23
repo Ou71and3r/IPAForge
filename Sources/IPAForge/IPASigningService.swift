@@ -320,7 +320,8 @@ enum IPASigningService {
         )
         defer { try? fm.removeItem(at: operationWorkspace) }
 
-        try RorkSigner.signIPA(
+        try perform(stage: "Подписване и повторно архивиране чрез RorkSign", operation: {
+            try RorkSigner.signIPA(
             at: signingInputURL,
             outputURL: temporaryOutputURL,
             identity: identity,
@@ -331,7 +332,8 @@ enum IPASigningService {
             ),
             archiveCompressionMode: .deflated,
             temporaryDirectory: operationWorkspace
-        )
+            )
+        })
 
         try fm.setAttributes(
             [.protectionKey: FileProtectionType.complete],
