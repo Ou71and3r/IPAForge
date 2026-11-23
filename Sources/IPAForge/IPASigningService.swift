@@ -29,7 +29,7 @@ enum IPASigningError: LocalizedError {
         case .unsupportedBundleRewrite(let components):
             let details = components.isEmpty
                 ? "Не бяха прочетени подробности за вложените компоненти."
-                : components.joined(separator: "\\n")
+                : components.joined(separator: "\n")
             return "Основният Bundle ID трябва да бъде променен, но IPA съдържа вложени компоненти. Ето диагностиката:\\n\\n\\(details)\\n\\nДобави съвместими provisioning профили за компонентите без съвпадение. Оригиналният IPA не е променен."
         case .ambiguousProfiles(let identifier):
             return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
@@ -154,13 +154,13 @@ enum IPASigningService {
                 if matchingProfiles.isEmpty {
                     profileStatus = "НЯМА съвместим профил"
                 } else if matchingProfiles.count > 1 {
-                    profileStatus = "НЯКОЛКО съвместими профила (\\(matchingProfiles.count))"
+                    profileStatus = "НЯКОЛКО съвместими профила (\(matchingProfiles.count))"
                 } else if matchingProfiles[0].profile.isExpired() {
                     profileStatus = "Профилът е изтекъл"
                 } else {
                     profileStatus = "Има съвместим профил"
                 }
-                nestedComponents.append("\\(name) — \\(identifier) — \\(profileStatus)")
+                nestedComponents.append("\(name) — \(identifier) — \(profileStatus)")
             }
             guard nestedComponents.isEmpty else {
                 throw IPASigningError.unsupportedBundleRewrite(components: nestedComponents)
