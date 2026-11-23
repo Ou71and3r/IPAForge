@@ -115,7 +115,7 @@ struct ContentView: View {
             metric("Приложения .app", value: archive.appBundleNames.isEmpty ? "Не са открити" : archive.appBundleNames.joined(separator: ", "))
 
             if archive.infoPlistCount > 0 {
-                Label("Открити Info.plist: \(archive.infoPlistCount)", systemImage: "checkmark.seal")
+                Label("Открити Info.plist: \\(archive.infoPlistCount)", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.green)
             } else {
@@ -179,8 +179,11 @@ private struct IPAFilePicker: UIViewControllerRepresentable {
     }
 
     func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let ipaType = UTType("com.apple.itunes.ipa")
+            ?? UTType(filenameExtension: "ipa", conformingTo: .zip)
+            ?? .zip
         let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [.item],
+            forOpeningContentTypes: [ipaType],
             asCopy: false
         )
         picker.allowsMultipleSelection = false
