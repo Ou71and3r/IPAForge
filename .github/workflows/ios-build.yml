@@ -14,7 +14,7 @@ on:
 jobs:
   build-simulator:
     name: Build for iOS Simulator
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - name: Select Xcode 27.2
@@ -45,7 +45,7 @@ jobs:
 
   build-device:
     name: Build for physical iOS devices
-    runs-on: macos-26
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
       - name: Install XcodeGen
