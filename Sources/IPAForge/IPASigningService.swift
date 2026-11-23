@@ -118,7 +118,7 @@ enum IPASigningService {
             }
             var prefixesToRemove = Set<String>()
             for entry in extensionInfoEntries {
-                let identifier = try readBundleIdentifierFromReadArchive(entry)
+                let identifier = try readBundleIdentifier(from: entry)
                 let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
                 guard let extensionIndex = parts.firstIndex(where: { $0 == "homewidget.appex" || $0 == "notification.appex" }) else {
                     continue
@@ -134,7 +134,7 @@ enum IPASigningService {
 
             for prefix in prefixesToRemove {
                 let paths = archive.filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
-                    .map(\\.path)
+                    .map(\.path)
                 for path in paths {
                     if let entry = archive.first(where: { $0.path == path }) {
                         try archive.remove(entry)
