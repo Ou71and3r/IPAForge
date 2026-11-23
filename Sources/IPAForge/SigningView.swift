@@ -39,6 +39,7 @@ struct SigningView: View {
                             Spacer()
                             Button(role: .destructive) {
                                 profileURLs.removeAll { $0 == url }
+                                try? FileManager.default.removeItem(at: url)
                             } label: {
                                 Image(systemName: "minus.circle")
                             }
@@ -69,6 +70,13 @@ struct SigningView: View {
                             )
                             await MainActor.run {
                                 outputURL = result
+                                // Remove imported signing material as soon as it is no longer needed.
+                                try? FileManager.default.removeItem(at: selectedP12)
+                                for profileURL in selectedProfiles {
+                                    try? FileManager.default.removeItem(at: profileURL)
+                                }
+                                p12URL = nil
+                                profileURLs = []
                                 password = ""
                                 working = false
                             }
@@ -127,7 +135,12 @@ struct SigningView: View {
             }
         }
         .fileImporter(isPresented: $choosingP12, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            handleCredentialImport(result, expectedExtension: "p12") { p12URL = $0[0] }
+            handleCredentialImport(result, expectedExtension: "p12") {
+                if let previous = p12URL {
+                    try? FileManager.default.removeItem(at: previous)
+                }
+                p12URL = $0[0]
+            }
         }
         .fileImporter(isPresented: $choosingProfiles, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
             handleCredentialImport(result, expectedExtension: "mobileprovision") { imported in
