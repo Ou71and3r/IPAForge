@@ -542,7 +542,7 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             let selectedRange: ClosedRange<Int64>
             if let rangeHeader {
                 guard let parsed = parseByteRange(rangeHeader, fileSize: size) else {
-                    let header = "HTTP/1.1 416 Range Not Satisfiable\\r\\nContent-Range: bytes */\\(size)\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n"
+                    let header = "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */\(size)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                     connection.send(content: Data(header.utf8), completion: .contentProcessed { _ in
                         connection.cancel()
                     })
@@ -560,9 +560,9 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             let isPartial = rangeHeader != nil
             let status = isPartial ? "206 Partial Content" : "200 OK"
             let rangeLine = isPartial
-                ? "Content-Range: bytes \\(selectedRange.lowerBound)-\\(selectedRange.upperBound)/\\(size)\\r\\n"
+                ? "Content-Range: bytes \(selectedRange.lowerBound)-\(selectedRange.upperBound)/\(size)\r\n"
                 : ""
-            let header = "HTTP/1.1 \\(status)\\r\\nContent-Type: application/octet-stream\\r\\nAccept-Ranges: bytes\\r\\n\\(rangeLine)Content-Length: \\(contentLength)\\r\\nCache-Control: no-store\\r\\nConnection: close\\r\\n\\r\\n"
+            let header = "HTTP/1.1 \(status)\r\nContent-Type: application/octet-stream\r\nAccept-Ranges: bytes\r\n\(rangeLine)Content-Length: \(contentLength)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
             connection.send(content: Data(header.utf8), completion: .contentProcessed { [weak self] error in
                 guard let self, error == nil else {
                     try? file.close()
