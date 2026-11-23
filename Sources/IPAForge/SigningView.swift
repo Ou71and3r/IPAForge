@@ -68,6 +68,7 @@ struct SigningView: View {
                     guard let selectedP12 = p12URL, !profileURLs.isEmpty else { return }
                     let selectedProfiles = profileURLs
                     let signingPassword = password
+                    let shouldRemoveUnsupportedExtensions = removeUnsupportedExtensions
                     working = true
                     errorText = nil
                     outputURL = nil
@@ -79,7 +80,7 @@ struct SigningView: View {
                                 p12URL: selectedP12,
                                 profileURLs: selectedProfiles,
                                 password: signingPassword,
-                                removeUnsupportedExtensions: removeUnsupportedExtensions
+                                removeUnsupportedExtensions: shouldRemoveUnsupportedExtensions
                             )
                             await MainActor.run {
                                 outputURL = result
