@@ -48,13 +48,15 @@ enum IPASigningError: LocalizedError {
 enum IPASigningService {
     private static let additionalStorageHeadroom: Int64 = 512 * 1024 * 1024
 
-    static func sign(ipaURL: URL, p12URL: URL, profileURLs: [URL], password: String) throws -> URL {
+    static func sign(ipaURL: URL, p12URL: URL, profileURLs: [URL], password: String, removeUnsupportedExtensions: Bool = false) throws -> URL {
         let fm = FileManager.default
         let summary = try IPAArchiveService.inspect(archiveURL: ipaURL)
         let (twiceExpanded, overflowA) = summary.uncompressedSize.multipliedReportingOverflow(by: 2)
         let (withInput, overflowB) = twiceExpanded.addingReportingOverflow(summary.fileSize)
-        let (required, overflowC) = withInput.addingReportingOverflow(additionalStorageHeadroom)
-        guard !overflowA, !overflowB, !overflowC else {
+        let (baseRequired, overflowC) = withInput.addingReportingOverflow(additionalStorageHeadroom)
+        let (extraCopies, overflowD) = summary.fileSize.multipliedReportingOverflow(by: removeUnsupportedExtensions ? 2 : 0)
+        let (required, overflowE) = baseRequired.addingReportingOverflow(extraCopies)
+        guard !overflowA, !overflowB, !overflowC, !overflowD, !overflowE else {
             throw IPAArchiveError.expandedSizeLimit
         }
 
@@ -80,17 +82,20 @@ enum IPASigningService {
             return (url, data, profile)
         }
 
-        let archive = try Archive(url: ipaURL, accessMode: .read)
-        let rootInfoEntry = archive.first(where: {
-            let parts = $0.path.split(separator: "/")
-            return parts.count == 3 && parts[0] == "Payload"
-                && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
-        })
-        guard let rootInfoEntry else { throw IPASigningError.missingPayload }
-
         let inspectionDirectory = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try fm.createDirectory(at: inspectionDirectory, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: inspectionDirectory) }
+
+        var signingInputURL = ipaURL
+        if removeUnsupportedExtensions {
+            signingInputURL = inspectionDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("ipa")
+            try fm.copyItem(at: ipaURL, to: signingInputURL)
+        }
+
+        let archive = try Archive(
+            url: signingInputURL,
+            accessMode: removeUnsupportedExtensions ? .update : .read
+        )
 
         func readBundleIdentifier(from entry: Entry) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
@@ -105,7 +110,61 @@ enum IPASigningService {
             return identifier
         }
 
-        let rootIdentifier = try readBundleIdentifier(from: rootInfoEntry)
+        if removeUnsupportedExtensions {
+            let extensionInfoEntries = archive.filter { entry in
+                let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
+                return parts.last == "Info.plist"
+                    && parts.contains(where: { $0 == "homewidget.appex" || $0 == "notification.appex" })
+            }
+            var prefixesToRemove = Set<String>()
+            for entry in extensionInfoEntries {
+                let identifier = try readBundleIdentifierFromReadArchive(entry)
+                let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
+                guard let extensionIndex = parts.firstIndex(where: { $0 == "homewidget.appex" || $0 == "notification.appex" }) else {
+                    continue
+                }
+                let extensionPrefix = parts.prefix(extensionIndex + 1).joined(separator: "/") + "/"
+                let hasCompatibleProfile = profiles.contains {
+                    !$0.profile.isExpired() && $0.profile.supportsBundleIdentifier(identifier)
+                }
+                if !hasCompatibleProfile {
+                    prefixesToRemove.insert(extensionPrefix)
+                }
+            }
+
+            for prefix in prefixesToRemove {
+                let paths = archive.filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
+                    .map(\\.path)
+                for path in paths {
+                    if let entry = archive.first(where: { $0.path == path }) {
+                        try archive.remove(entry)
+                    }
+                }
+            }
+        }
+
+        let readArchive = try Archive(url: signingInputURL, accessMode: .read)
+        let rootInfoEntry = readArchive.first(where: {
+            let parts = $0.path.split(separator: "/")
+            return parts.count == 3 && parts[0] == "Payload"
+                && parts[1].hasSuffix(".app") && parts[2] == "Info.plist"
+        })
+        guard let rootInfoEntry else { throw IPASigningError.missingPayload }
+
+        func readBundleIdentifierFromReadArchive(_ entry: Entry) throws -> String {
+            let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
+            defer { try? fm.removeItem(at: fileURL) }
+            _ = try readArchive.extract(entry, to: fileURL)
+            let data = try Data(contentsOf: fileURL)
+            guard let info = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
+                  let identifier = info["CFBundleIdentifier"] as? String,
+                  !identifier.isEmpty else {
+                throw IPASigningError.missingBundleIdentifier
+            }
+            return identifier
+        }
+
+        let rootIdentifier = try readBundleIdentifierFromReadArchive(rootInfoEntry)
         let rootProfile: (url: URL, data: Data, profile: ProvisioningProfile)
         let signingBundleIdentifier: String
         if let exactProfile = try selectProfile(for: rootIdentifier, from: profiles) {
@@ -138,9 +197,9 @@ enum IPASigningService {
             throw IPASigningError.expiredProfile(signingBundleIdentifier)
         }
 
-        if signingBundleIdentifier != rootIdentifier {
+        if signingBundleIdentifier != rootIdentifier && !removeUnsupportedExtensions {
             var nestedComponents: [String] = []
-            for entry in archive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
+            for entry in readArchive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
                 let parts = entry.path.split(separator: "/")
                 guard parts.count >= 4 else { continue }
                 let name = String(parts.dropLast().last ?? "")
@@ -245,7 +304,7 @@ enum IPASigningService {
         defer { try? fm.removeItem(at: operationWorkspace) }
 
         try RorkSigner.signIPA(
-            at: ipaURL,
+            at: signingInputURL,
             outputURL: temporaryOutputURL,
             identity: identity,
             options: AppSigningOptions(
