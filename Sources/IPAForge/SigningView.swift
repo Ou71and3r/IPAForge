@@ -9,8 +9,7 @@ struct SigningView: View {
     @State private var p12URL: URL?
     @State private var profileURLs: [URL] = []
     @State private var password = ""
-    @State private var choosingP12 = false
-    @State private var choosingProfiles = false
+    @State private var credentialPicker: CredentialPickerMode?
     @State private var working = false
     @State private var outputURL: URL?
     @State private var errorText: String?
@@ -22,13 +21,13 @@ struct SigningView: View {
         Form {
             Section("Файлове за подписване") {
                 LabeledContent("IPA", value: ipaURL.lastPathComponent)
-                Button("Избери P12 сертификат") { choosingP12 = true }
+                Button("Избери P12 сертификат") { credentialPicker = .p12 }
                     .disabled(working)
                 if let p12URL {
                     Label(p12URL.lastPathComponent, systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Button("Добави MobileProvision профили") { choosingProfiles = true }
+                Button("Добави MobileProvision профили") { credentialPicker = .profiles }
                     .disabled(working)
                 if profileURLs.isEmpty {
                     Text("Не са избрани provisioning профили.")
@@ -138,24 +137,30 @@ struct SigningView: View {
                     .ignoresSafeArea()
             }
         }
-        .fileImporter(isPresented: $choosingP12, allowedContentTypes: [.data], allowsMultipleSelection: false) { result in
-            handleCredentialImport(result, expectedExtension: "p12") {
-                if let previous = p12URL {
-                    try? FileManager.default.removeItem(at: previous)
+        .sheet(item: $credentialPicker) { mode in
+            CredentialFilePicker(allowsMultipleSelection: mode == .profiles) { result in
+                credentialPicker = nil
+                switch mode {
+                case .p12:
+                    handleCredentialImport(result, expectedExtension: "p12") { imported in
+                        if let previous = p12URL {
+                            try? FileManager.default.removeItem(at: previous)
+                        }
+                        p12URL = imported[0]
+                    }
+                case .profiles:
+                    handleCredentialImport(result, expectedExtension: "mobileprovision") { imported in
+                        let known = Set(profileURLs)
+                        let newProfiles = imported.filter { !known.contains($0) }
+                        let duplicates = imported.filter { known.contains($0) }
+                        for duplicate in duplicates {
+                            try? FileManager.default.removeItem(at: duplicate)
+                        }
+                        profileURLs.append(contentsOf: newProfiles)
+                    }
                 }
-                p12URL = $0[0]
             }
-        }
-        .fileImporter(isPresented: $choosingProfiles, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
-            handleCredentialImport(result, expectedExtension: "mobileprovision") { imported in
-                let known = Set(profileURLs)
-                let newProfiles = imported.filter { !known.contains($0) }
-                let duplicates = imported.filter { known.contains($0) }
-                for duplicate in duplicates {
-                    try? FileManager.default.removeItem(at: duplicate)
-                }
-                profileURLs.append(contentsOf: newProfiles)
-            }
+            .ignoresSafeArea()
         }
     }
 
@@ -686,3 +691,54 @@ private struct IPAInstallSafariView: UIViewControllerRepresentable {
         try destination.setResourceValues(fileValues)
         return destination
     }
+
+
+private enum CredentialPickerMode: Identifiable {
+    case p12
+    case profiles
+
+    var id: String {
+        switch self {
+        case .p12: return "p12"
+        case .profiles: return "profiles"
+        }
+    }
+}
+
+private struct CredentialFilePicker: UIViewControllerRepresentable {
+    let allowsMultipleSelection: Bool
+    let onCompletion: (Result<[URL], Error>) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onCompletion: onCompletion)
+    }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(
+            forOpeningContentTypes: [.data],
+            asCopy: true
+        )
+        picker.shouldShowFileExtensions = true
+        picker.allowsMultipleSelection = allowsMultipleSelection
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        private let onCompletion: (Result<[URL], Error>) -> Void
+
+        init(onCompletion: @escaping (Result<[URL], Error>) -> Void) {
+            self.onCompletion = onCompletion
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onCompletion(.success(urls))
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onCompletion(.success([]))
+        }
+    }
+}
