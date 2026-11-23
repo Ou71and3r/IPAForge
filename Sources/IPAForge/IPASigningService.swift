@@ -92,15 +92,12 @@ enum IPASigningService {
             try fm.copyItem(at: ipaURL, to: signingInputURL)
         }
 
-        let archive = try Archive(
-            url: signingInputURL,
-            accessMode: removeUnsupportedExtensions ? .update : .read
-        )
+        let archive = try Archive(url: signingInputURL, accessMode: .read)
 
-        func readBundleIdentifier(from entry: Entry) throws -> String {
+        func readBundleIdentifier(from entry: Entry, in sourceArchive: Archive) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: fileURL) }
-            _ = try archive.extract(entry, to: fileURL)
+            _ = try sourceArchive.extract(entry, to: fileURL)
             let data = try Data(contentsOf: fileURL)
             guard let info = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
                   let identifier = info["CFBundleIdentifier"] as? String,
@@ -111,33 +108,44 @@ enum IPASigningService {
         }
 
         if removeUnsupportedExtensions {
-            let extensionInfoEntries = archive.filter { entry in
-                let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
-                return parts.last == "Info.plist"
-                    && parts.contains(where: { $0 == "homewidget.appex" || $0 == "notification.appex" })
-            }
-            var prefixesToRemove = Set<String>()
-            for entry in extensionInfoEntries {
-                let identifier = try readBundleIdentifier(from: entry)
-                let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
-                guard let extensionIndex = parts.firstIndex(where: { $0 == "homewidget.appex" || $0 == "notification.appex" }) else {
-                    continue
+            // Read and inspect the copied IPA through a read-only archive first.
+            // ZIPFoundation extraction from an archive opened for update can fail
+            // for some large/compressed entries.
+            let prefixesToRemove: Set<String> = try {
+                var prefixes = Set<String>()
+                let candidateArchive = try Archive(url: signingInputURL, accessMode: .read)
+                let extensionInfoEntries = candidateArchive.filter { entry in
+                    let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
+                    return parts.last == "Info.plist"
+                        && parts.contains(where: { $0 == "homewidget.appex" || $0 == "notification.appex" })
                 }
-                let extensionPrefix = parts.prefix(extensionIndex + 1).joined(separator: "/") + "/"
-                let hasCompatibleProfile = profiles.contains {
-                    !$0.profile.isExpired() && $0.profile.supportsBundleIdentifier(identifier)
+                for entry in extensionInfoEntries {
+                    let identifier = try readBundleIdentifier(from: entry, in: candidateArchive)
+                    let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
+                    guard let extensionIndex = parts.firstIndex(where: { $0 == "homewidget.appex" || $0 == "notification.appex" }) else {
+                        continue
+                    }
+                    let extensionPrefix = parts.prefix(extensionIndex + 1).joined(separator: "/") + "/"
+                    let hasCompatibleProfile = profiles.contains {
+                        !$0.profile.isExpired() && $0.profile.supportsBundleIdentifier(identifier)
+                    }
+                    if !hasCompatibleProfile {
+                        prefixes.insert(extensionPrefix)
+                    }
                 }
-                if !hasCompatibleProfile {
-                    prefixesToRemove.insert(extensionPrefix)
-                }
-            }
+                return prefixes
+            }()
 
-            for prefix in prefixesToRemove {
-                let paths = archive.filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
-                    .map(\.path)
-                for path in paths {
-                    if let entry = archive.first(where: { $0.path == path }) {
-                        try archive.remove(entry)
+            if !prefixesToRemove.isEmpty {
+                let mutableArchive = try Archive(url: signingInputURL, accessMode: .update)
+                for prefix in prefixesToRemove {
+                    let paths = mutableArchive
+                        .filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
+                        .map(\\.path)
+                    for path in paths {
+                        if let entry = mutableArchive.first(where: { $0.path == path }) {
+                            try mutableArchive.remove(entry)
+                        }
                     }
                 }
             }
@@ -205,7 +213,7 @@ enum IPASigningService {
                 let name = String(parts.dropLast().last ?? "")
                 guard name.hasSuffix(".appex") || name.hasSuffix(".app") else { continue }
 
-                let identifier = try readBundleIdentifierFromReadArchive(entry)
+                let identifier = try readBundleIdentifier(from: entry, in: readArchive)
                 let matchingProfiles = profiles.filter {
                     $0.profile.supportsBundleIdentifier(identifier)
                 }
