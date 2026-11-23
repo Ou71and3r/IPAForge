@@ -460,7 +460,7 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
                 sendHeadResponse(
                     status: "200 OK",
                     type: "text/html; charset=utf-8",
-                    contentLength: redirectHTML.count,
+                    contentLength: Int64(redirectHTML.count),
                     on: connection
                 )
             case "/app.ipa":
