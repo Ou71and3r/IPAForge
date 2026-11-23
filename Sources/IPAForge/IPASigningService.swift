@@ -205,7 +205,7 @@ enum IPASigningService {
                 let name = String(parts.dropLast().last ?? "")
                 guard name.hasSuffix(".appex") || name.hasSuffix(".app") else { continue }
 
-                let identifier = try readBundleIdentifier(from: entry)
+                let identifier = try readBundleIdentifierFromReadArchive(entry)
                 let matchingProfiles = profiles.filter {
                     $0.profile.supportsBundleIdentifier(identifier)
                 }
@@ -230,7 +230,7 @@ enum IPASigningService {
         for entry in archive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
             let parts = entry.path.split(separator: "/")
             guard parts.count >= 4 else { continue }
-            let identifier = try readBundleIdentifier(from: entry)
+            let identifier = try readBundleIdentifierFromReadArchive(entry)
             if identifier == rootIdentifier { continue }
             guard let selected = try selectProfile(for: identifier, from: profiles) else {
                 // Frameworks and resource bundles are not independently provisioned.
