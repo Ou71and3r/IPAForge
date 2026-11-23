@@ -4,7 +4,7 @@ IPAForge is an iOS app prototype for importing, inspecting, locally signing, and
 
 ## Implemented in source
 
-- SwiftUI iOS application targeting iOS 16 and later.
+- SwiftUI iOS application targeting iOS 27 and later.
 - Imports an `.ipa` file through the iOS document picker and copies it into the app's private Documents/Imported directory.
 - Inspects ZIP entries with ZIPFoundation without extracting the full archive.
 - Reports archive size, entry count, total declared uncompressed size, Payload presence, app bundle names, and Info.plist entries.
