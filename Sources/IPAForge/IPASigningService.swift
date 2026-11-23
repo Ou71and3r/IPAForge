@@ -21,8 +21,8 @@ enum IPASigningError: LocalizedError {
         case .missingRootProfile(let bundleIdentifier, let profiles):
             let details = profiles.isEmpty
                 ? "Няма прочетени provisioning профили."
-                : profiles.joined(separator: "\\n")
-            return "Няма provisioning профил, който разрешава основното приложение.\\nBundle ID на IPA: \\(bundleIdentifier)\\n\\nИмпортирани профили:\\n\\(details)\\n\\nP12 сертификатът е приет от проверката за съответствие с профила."
+                : profiles.joined(separator: "\n")
+            return "Няма provisioning профил, който разрешава основното приложение.\nBundle ID на IPA: \(bundleIdentifier)\n\nИмпортирани профили:\n\(details)\n\nP12 сертификатът е приет от проверката за съответствие с профила."
         case .noMatchingProfile(let identifier):
             return "Няма provisioning профил за вложения компонент: \(identifier)"
         case .ambiguousProfiles(let identifier):
@@ -105,7 +105,7 @@ enum IPASigningService {
                 let appID = item.profile.applicationIdentifier ?? "(липсва application-identifier)"
                 let teamID = item.profile.teamIdentifier
                 let pattern = item.profile.authorizedBundleIdentifier ?? "(неразпознат App ID)"
-                return "• \\(item.url.lastPathComponent): App ID \\(appID); Team ID \\(teamID); шаблон \\(pattern)"
+                return "• \(item.url.lastPathComponent): App ID \(appID); Team ID \(teamID); шаблон \(pattern)"
             }
             throw IPASigningError.missingRootProfile(
                 bundleIdentifier: rootIdentifier,
