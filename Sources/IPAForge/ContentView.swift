@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -54,8 +55,11 @@ struct ContentView: View {
             .navigationTitle("IPAForge")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $model.isImporterPresented) {
-                IPAFilePicker(onCompletion: model.handleImport)
-                    .ignoresSafeArea()
+                IPAFilePicker { result in
+                    model.isImporterPresented = false
+                    model.handleImport(result)
+                }
+                .ignoresSafeArea()
             }
         }
     }
