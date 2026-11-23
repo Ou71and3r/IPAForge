@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
 
 struct ContentView: View {
@@ -54,12 +53,12 @@ struct ContentView: View {
             }
             .navigationTitle("IPAForge")
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $model.isImporterPresented) {
-                IPAFilePicker { result in
-                    model.isImporterPresented = false
-                    model.handleImport(result)
-                }
-                .ignoresSafeArea()
+            .fileImporter(
+                isPresented: $model.isImporterPresented,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                model.handleImport(result)
             }
         }
     }
@@ -170,49 +169,3 @@ struct ContentView: View {
     }
 }
 
-
-private struct IPAFilePicker: UIViewControllerRepresentable {
-    let onCompletion: (Result<[URL], Error>) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onCompletion: onCompletion)
-    }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        // IPA is a ZIP-based byte stream. Use the broad data type here because
-        // Files providers don't always expose the same custom UTI for .ipa files.
-        // The importer validates the .ipa extension after the user selects it.
-        let picker = UIDocumentPickerViewController(
-            forOpeningContentTypes: [.data],
-            asCopy: false
-        )
-        picker.shouldShowFileExtensions = true
-        picker.allowsMultipleSelection = false
-        picker.delegate = context.coordinator
-        return picker
-    }
-
-    func updateUIViewController(
-        _ uiViewController: UIDocumentPickerViewController,
-        context: Context
-    ) {}
-
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        private let onCompletion: (Result<[URL], Error>) -> Void
-
-        init(onCompletion: @escaping (Result<[URL], Error>) -> Void) {
-            self.onCompletion = onCompletion
-        }
-
-        func documentPicker(
-            _ controller: UIDocumentPickerViewController,
-            didPickDocumentsAt urls: [URL]
-        ) {
-            onCompletion(.success(urls))
-        }
-
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onCompletion(.success([]))
-        }
-    }
-}
