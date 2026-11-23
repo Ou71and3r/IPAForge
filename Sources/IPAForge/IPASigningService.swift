@@ -7,6 +7,7 @@ enum IPASigningError: LocalizedError {
     case missingBundleIdentifier
     case missingRootProfile(bundleIdentifier: String, profiles: [String])
     case noMatchingProfile(String)
+    case unsupportedBundleRewrite
     case ambiguousProfiles(String)
     case expiredProfile(String)
     case outputValidationFailed
@@ -25,6 +26,8 @@ enum IPASigningError: LocalizedError {
             return "Няма provisioning профил, който разрешава основното приложение.\nBundle ID на IPA: \(bundleIdentifier)\n\nИмпортирани профили:\n\(details)\n\nP12 сертификатът е приет от проверката за съответствие с профила."
         case .noMatchingProfile(let identifier):
             return "Няма provisioning профил за вложения компонент: \(identifier)"
+        case .unsupportedBundleRewrite:
+            return "Този IPA съдържа вложено приложение или разширение. Смяната на основния Bundle ID изисква отделни съвместими provisioning профили за тези компоненти. Подписването е прекратено без промяна на файла."
         case .ambiguousProfiles(let identifier):
             return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
         case .expiredProfile(let identifier):
@@ -100,20 +103,49 @@ enum IPASigningService {
         }
 
         let rootIdentifier = try readBundleIdentifier(from: rootInfoEntry)
-        guard let rootProfile = try selectProfile(for: rootIdentifier, from: profiles) else {
-            let diagnostics = profiles.map { item in
-                let appID = item.profile.applicationIdentifier ?? "(липсва application-identifier)"
-                let teamID = item.profile.teamIdentifier
-                let pattern = item.profile.authorizedBundleIdentifier ?? "(неразпознат App ID)"
-                return "• \(item.url.lastPathComponent): App ID \(appID); Team ID \(teamID); шаблон \(pattern)"
+        let rootProfile: (url: URL, data: Data, profile: ProvisioningProfile)
+        let signingBundleIdentifier: String
+        if let exactProfile = try selectProfile(for: rootIdentifier, from: profiles) {
+            rootProfile = exactProfile
+            signingBundleIdentifier = rootIdentifier
+        } else {
+            // Rebase only to a single explicit App ID authorized by the selected
+            // credential. Wildcard profiles and ambiguous choices are not guessed.
+            let candidates = profiles.filter {
+                !$0.profile.isExpired()
+                    && $0.profile.explicitAuthorizedBundleIdentifier != nil
             }
-            throw IPASigningError.missingRootProfile(
-                bundleIdentifier: rootIdentifier,
-                profiles: diagnostics
-            )
+            guard candidates.count == 1,
+                  let replacementIdentifier = candidates.first?.profile.explicitAuthorizedBundleIdentifier else {
+                let diagnostics = profiles.map { item in
+                    let appID = item.profile.applicationIdentifier ?? "(липсва application-identifier)"
+                    let teamID = item.profile.teamIdentifier
+                    let pattern = item.profile.authorizedBundleIdentifier ?? "(неразпознат App ID)"
+                    return "• \(item.url.lastPathComponent): App ID \(appID); Team ID \(teamID); шаблон \(pattern)"
+                }
+                throw IPASigningError.missingRootProfile(
+                    bundleIdentifier: rootIdentifier,
+                    profiles: diagnostics
+                )
+            }
+            rootProfile = candidates[0]
+            signingBundleIdentifier = replacementIdentifier
         }
         guard !rootProfile.profile.isExpired() else {
-            throw IPASigningError.expiredProfile(rootIdentifier)
+            throw IPASigningError.expiredProfile(signingBundleIdentifier)
+        }
+
+        if signingBundleIdentifier != rootIdentifier {
+            let hasNestedProvisionedBundle = archive.contains { entry in
+                guard entry.path.hasPrefix("Payload/"), entry.path.hasSuffix("/Info.plist") else { return false }
+                let parts = entry.path.split(separator: "/")
+                guard parts.count >= 4 else { return false }
+                let name = parts.dropLast().last ?? ""
+                return name.hasSuffix(".appex") || name.hasSuffix(".app")
+            }
+            guard !hasNestedProvisionedBundle else {
+                throw IPASigningError.unsupportedBundleRewrite
+            }
         }
 
         var profilesByBundleIdentifier: [String: Data] = [:]
@@ -198,7 +230,7 @@ enum IPASigningService {
             outputURL: temporaryOutputURL,
             identity: identity,
             options: AppSigningOptions(
-                bundleIdentifier: rootIdentifier,
+                bundleIdentifier: signingBundleIdentifier,
                 rootProvisioningProfile: rootProfile.data,
                 provisioningProfilesByBundleIdentifier: profilesByBundleIdentifier
             ),
