@@ -5,7 +5,7 @@ import RorkSign
 enum IPASigningError: LocalizedError {
     case missingPayload
     case missingBundleIdentifier
-    case missingRootProfile
+    case missingRootProfile(bundleIdentifier: String, profiles: [String])
     case noMatchingProfile(String)
     case ambiguousProfiles(String)
     case expiredProfile(String)
@@ -18,8 +18,11 @@ enum IPASigningError: LocalizedError {
             return "В архива не е открито приложение в Payload."
         case .missingBundleIdentifier:
             return "Не може да бъде прочетен Bundle Identifier от Info.plist."
-        case .missingRootProfile:
-            return "Не е избран provisioning профил, който разрешава основното приложение."
+        case .missingRootProfile(let bundleIdentifier, let profiles):
+            let details = profiles.isEmpty
+                ? "Няма прочетени provisioning профили."
+                : profiles.joined(separator: "\\n")
+            return "Няма provisioning профил, който разрешава основното приложение.\\nBundle ID на IPA: \\(bundleIdentifier)\\n\\nИмпортирани профили:\\n\\(details)\\n\\nP12 сертификатът е приет от проверката за съответствие с профила."
         case .noMatchingProfile(let identifier):
             return "Няма provisioning профил за вложения компонент: \(identifier)"
         case .ambiguousProfiles(let identifier):
@@ -98,7 +101,16 @@ enum IPASigningService {
 
         let rootIdentifier = try readBundleIdentifier(from: rootInfoEntry)
         guard let rootProfile = try selectProfile(for: rootIdentifier, from: profiles) else {
-            throw IPASigningError.missingRootProfile
+            let diagnostics = profiles.map { item in
+                let appID = item.profile.applicationIdentifier ?? "(липсва application-identifier)"
+                let teamID = item.profile.teamIdentifier
+                let pattern = item.profile.authorizedBundleIdentifier ?? "(неразпознат App ID)"
+                return "• \\(item.url.lastPathComponent): App ID \\(appID); Team ID \\(teamID); шаблон \\(pattern)"
+            }
+            throw IPASigningError.missingRootProfile(
+                bundleIdentifier: rootIdentifier,
+                profiles: diagnostics
+            )
         }
         guard !rootProfile.profile.isExpired() else {
             throw IPASigningError.expiredProfile(rootIdentifier)
