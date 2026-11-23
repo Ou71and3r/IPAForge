@@ -524,7 +524,7 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
         contentLength: Int64,
         on connection: NWConnection
     ) {
-        let header = "HTTP/1.1 \(status)\\r\\nContent-Type: \(type)\\r\\nContent-Length: \(contentLength)\\r\\nCache-Control: no-store\\r\\nConnection: close\\r\\n\\r\\n"
+        let header = "HTTP/1.1 \(status)\r\nContent-Type: \(type)\r\nContent-Length: \(contentLength)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
         connection.send(content: Data(header.utf8), completion: .contentProcessed { _ in
             connection.cancel()
         })
