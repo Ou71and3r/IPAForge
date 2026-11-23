@@ -115,7 +115,7 @@ struct ContentView: View {
             metric("Приложения .app", value: archive.appBundleNames.isEmpty ? "Не са открити" : archive.appBundleNames.joined(separator: ", "))
 
             if archive.infoPlistCount > 0 {
-                Label("Открити Info.plist: \\(archive.infoPlistCount)", systemImage: "checkmark.seal")
+                Label("Открити Info.plist: \(archive.infoPlistCount)", systemImage: "checkmark.seal")
                     .font(.subheadline)
                     .foregroundStyle(.green)
             } else {
