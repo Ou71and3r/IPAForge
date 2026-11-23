@@ -92,8 +92,6 @@ enum IPASigningService {
             try fm.copyItem(at: ipaURL, to: signingInputURL)
         }
 
-        let archive = try Archive(url: signingInputURL, accessMode: .read)
-
         func readBundleIdentifier(from entry: Entry, in sourceArchive: Archive) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: fileURL) }
@@ -235,7 +233,7 @@ enum IPASigningService {
         }
 
         var profilesByBundleIdentifier: [String: Data] = [:]
-        for entry in archive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
+        for entry in readArchive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
             let parts = entry.path.split(separator: "/")
             guard parts.count >= 4 else { continue }
             let identifier = try readBundleIdentifierFromReadArchive(entry)
