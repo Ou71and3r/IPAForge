@@ -446,11 +446,54 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             return
         }
         let fields = requestLine.split(separator: " ")
-        guard fields.count >= 2, fields[0] == "GET" else {
+        guard fields.count >= 2,
+              fields[0] == "GET" || fields[0] == "HEAD" else {
             sendResponse(status: "405 Method Not Allowed", type: "text/plain", body: Data(), on: connection)
             return
         }
+        let method = fields[0]
         let rawPath = fields[1].split(separator: "?", maxSplits: 1).first.map(String.init) ?? ""
+
+        if method == "HEAD" {
+            switch rawPath {
+            case "/install":
+                sendHeadResponse(
+                    status: "200 OK",
+                    type: "text/html; charset=utf-8",
+                    contentLength: redirectHTML.count,
+                    on: connection
+                )
+            case "/app.ipa":
+                do {
+                    let attributes = try FileManager.default.attributesOfItem(atPath: ipaURL.path)
+                    guard let size = (attributes[.size] as? NSNumber)?.int64Value, size > 0 else {
+                        throw IPAInstallError.fileUnavailable
+                    }
+                    sendHeadResponse(
+                        status: "200 OK",
+                        type: "application/octet-stream",
+                        contentLength: size,
+                        on: connection
+                    )
+                } catch {
+                    sendHeadResponse(
+                        status: "404 Not Found",
+                        type: "text/plain",
+                        contentLength: 0,
+                        on: connection
+                    )
+                }
+            default:
+                sendHeadResponse(
+                    status: "404 Not Found",
+                    type: "text/plain",
+                    contentLength: 0,
+                    on: connection
+                )
+            }
+            return
+        }
+
         switch rawPath {
         case "/install":
             sendResponse(status: "200 OK", type: "text/html; charset=utf-8", body: redirectHTML, on: connection)
@@ -472,6 +515,18 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
             connection.send(content: body, completion: .contentProcessed { _ in
                 connection.cancel()
             })
+        })
+    }
+
+    private func sendHeadResponse(
+        status: String,
+        type: String,
+        contentLength: Int64,
+        on connection: NWConnection
+    ) {
+        let header = "HTTP/1.1 \(status)\\r\\nContent-Type: \(type)\\r\\nContent-Length: \(contentLength)\\r\\nCache-Control: no-store\\r\\nConnection: close\\r\\n\\r\\n"
+        connection.send(content: Data(header.utf8), completion: .contentProcessed { _ in
+            connection.cancel()
         })
     }
 
