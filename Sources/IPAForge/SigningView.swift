@@ -23,11 +23,13 @@ struct SigningView: View {
             Section("Файлове за подписване") {
                 LabeledContent("IPA", value: ipaURL.lastPathComponent)
                 Button("Избери P12 сертификат") { choosingP12 = true }
+                    .disabled(working)
                 if let p12URL {
                     Label(p12URL.lastPathComponent, systemImage: "checkmark.circle.fill")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Button("Добави MobileProvision профили") { choosingProfiles = true }
+                    .disabled(working)
                 if profileURLs.isEmpty {
                     Text("Не са избрани provisioning профили.")
                         .font(.caption).foregroundStyle(.secondary)
@@ -44,11 +46,13 @@ struct SigningView: View {
                                 Image(systemName: "minus.circle")
                             }
                             .buttonStyle(.borderless)
+                            .disabled(working)
                             .accessibilityLabel("Премахни профила")
                         }
                     }
                 }
                 SecureField("Парола на P12", text: $password)
+                    .disabled(working)
             }
 
             Section {
