@@ -38,33 +38,46 @@ enum IPAInstallManifestValidator {
             throw IPAInstallManifestError.malformedPropertyList
         }
 
-        var packageURLString: String?
-        var metadata: [String: Any]?
+        // The package asset and metadata must belong to the same manifest item.
+        // Never combine fields from separate items when validating the installer response.
+        var foundPackage = false
+        var foundMatchingPackageURL = false
+        var foundMetadata = false
 
         for item in items {
-            if let assets = item["assets"] as? [[String: Any]],
-               let package = assets.first(where: {
-                   ($0["kind"] as? String) == "software-package"
-               }) {
-                packageURLString = package["url"] as? String
+            guard let assets = item["assets"] as? [[String: Any]],
+                  let package = assets.first(where: {
+                      ($0["kind"] as? String) == "software-package"
+                  }) else {
+                continue
             }
-            if let candidate = item["metadata"] as? [String: Any] {
-                metadata = candidate
+            foundPackage = true
+
+            guard let packageURLString = package["url"] as? String,
+                  let packageURL = URL(string: packageURLString),
+                  packageURL.absoluteString == expectedPackageURL.absoluteString else {
+                continue
             }
+            foundMatchingPackageURL = true
+
+            guard let metadata = item["metadata"] as? [String: Any],
+                  metadata["bundle-identifier"] as? String == bundleIdentifier,
+                  metadata["bundle-version"] as? String == version,
+                  metadata["title"] as? String == displayName,
+                  metadata["kind"] as? String == "software" else {
+                continue
+            }
+            foundMetadata = true
+            break
         }
 
-        guard let packageURLString,
-              let packageURL = URL(string: packageURLString) else {
+        guard foundPackage else {
             throw IPAInstallManifestError.missingSoftwarePackage
         }
-        guard packageURL.absoluteString == expectedPackageURL.absoluteString else {
+        guard foundMatchingPackageURL else {
             throw IPAInstallManifestError.packageURLMismatch
         }
-        guard let metadata,
-              metadata["bundle-identifier"] as? String == bundleIdentifier,
-              metadata["bundle-version"] as? String == version,
-              metadata["title"] as? String == displayName,
-              metadata["kind"] as? String == "software" else {
+        guard foundMetadata else {
             throw IPAInstallManifestError.metadataMismatch
         }
     }
