@@ -38,6 +38,42 @@ final class IPAInstallManifestValidatorTests: XCTestCase {
         }
     }
 
+    func testRejectsManifestWithPackageAndMetadataInDifferentItems() throws {
+        let value: [String: Any] = [
+            "items": [
+                [
+                    "assets": [[
+                        "kind": "software-package",
+                        "url": packageURL.absoluteString
+                    ]]
+                ],
+                [
+                    "metadata": [
+                        "bundle-identifier": "com.example.demo",
+                        "bundle-version": "2.1",
+                        "kind": "software",
+                        "title": "Demo App"
+                    ]
+                ]
+            ]
+        ]
+        let data = try PropertyListSerialization.data(
+            fromPropertyList: value,
+            format: .xml,
+            options: 0
+        )
+
+        XCTAssertThrowsError(try IPAInstallManifestValidator.validate(
+            data,
+            expectedPackageURL: packageURL,
+            bundleIdentifier: "com.example.demo",
+            displayName: "Demo App",
+            version: "2.1"
+        )) { error in
+            XCTAssertEqual(error as? IPAInstallManifestError, .metadataMismatch)
+        }
+    }
+
     func testRejectsMalformedManifest() {
         XCTAssertThrowsError(try IPAInstallManifestValidator.validate(
             Data("not a plist".utf8),
