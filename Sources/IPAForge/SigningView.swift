@@ -498,7 +498,9 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
         case "/install":
             sendResponse(status: "200 OK", type: "text/html; charset=utf-8", body: redirectHTML, on: connection)
         case "/app.ipa":
-            streamIPA(on: connection)
+            let rangeHeader = request.components(separatedBy: "\r\n").first { $0.lowercased().hasPrefix("range:") }
+                .map { String($0.dropFirst("range:".count)).trimmingCharacters(in: .whitespaces) }
+            streamIPA(on: connection, rangeHeader: rangeHeader)
         default:
             sendResponse(status: "404 Not Found", type: "text/plain", body: Data(), on: connection)
         }
@@ -530,30 +532,83 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
         })
     }
 
-    private func streamIPA(on connection: NWConnection) {
+    private func streamIPA(on connection: NWConnection, rangeHeader: String?) {
         do {
             let attributes = try FileManager.default.attributesOfItem(atPath: ipaURL.path)
             guard let size = (attributes[.size] as? NSNumber)?.int64Value, size > 0 else {
                 throw IPAInstallError.fileUnavailable
             }
+
+            let selectedRange: ClosedRange<Int64>
+            if let rangeHeader {
+                guard let parsed = parseByteRange(rangeHeader, fileSize: size) else {
+                    let header = "HTTP/1.1 416 Range Not Satisfiable\\r\\nContent-Range: bytes */\\(size)\\r\\nContent-Length: 0\\r\\nConnection: close\\r\\n\\r\\n"
+                    connection.send(content: Data(header.utf8), completion: .contentProcessed { _ in
+                        connection.cancel()
+                    })
+                    return
+                }
+                selectedRange = parsed
+            } else {
+                selectedRange = 0...(size - 1)
+            }
+
+            let contentLength = selectedRange.upperBound - selectedRange.lowerBound + 1
             let file = try FileHandle(forReadingFrom: ipaURL)
-            let header = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: \(size)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+            try file.seek(toOffset: UInt64(selectedRange.lowerBound))
+
+            let isPartial = rangeHeader != nil
+            let status = isPartial ? "206 Partial Content" : "200 OK"
+            let rangeLine = isPartial
+                ? "Content-Range: bytes \\(selectedRange.lowerBound)-\\(selectedRange.upperBound)/\\(size)\\r\\n"
+                : ""
+            let header = "HTTP/1.1 \\(status)\\r\\nContent-Type: application/octet-stream\\r\\nAccept-Ranges: bytes\\r\\n\\(rangeLine)Content-Length: \\(contentLength)\\r\\nCache-Control: no-store\\r\\nConnection: close\\r\\n\\r\\n"
             connection.send(content: Data(header.utf8), completion: .contentProcessed { [weak self] error in
                 guard let self, error == nil else {
                     try? file.close()
                     connection.cancel()
                     return
                 }
-                self.sendNextChunk(from: file, on: connection)
+                self.sendNextChunk(from: file, remaining: contentLength, on: connection)
             })
         } catch {
             sendResponse(status: "404 Not Found", type: "text/plain", body: Data(), on: connection)
         }
     }
 
-    private func sendNextChunk(from file: FileHandle, on connection: NWConnection) {
+    private func parseByteRange(_ header: String, fileSize: Int64) -> ClosedRange<Int64>? {
+        guard header.lowercased().hasPrefix("bytes=") else { return nil }
+        let value = header.dropFirst("bytes=".count)
+        guard !value.contains(",") else { return nil }
+        let bounds = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard bounds.count == 2 else { return nil }
+
+        if bounds[0].isEmpty {
+            guard let suffixLength = Int64(bounds[1]), suffixLength > 0 else { return nil }
+            let length = min(suffixLength, fileSize)
+            return (fileSize - length)...(fileSize - 1)
+        }
+
+        guard let start = Int64(bounds[0]), start >= 0, start < fileSize else { return nil }
+        let end: Int64
+        if bounds[1].isEmpty {
+            end = fileSize - 1
+        } else {
+            guard let requestedEnd = Int64(bounds[1]), requestedEnd >= start else { return nil }
+            end = min(requestedEnd, fileSize - 1)
+        }
+        return start...end
+    }
+
+    private func sendNextChunk(from file: FileHandle, remaining: Int64, on connection: NWConnection) {
+        guard remaining > 0 else {
+            try? file.close()
+            connection.cancel()
+            return
+        }
         do {
-            let chunk = try file.read(upToCount: 1024 * 1024) ?? Data()
+            let requestedCount = Int(min(Int64(1024 * 1024), remaining))
+            let chunk = try file.read(upToCount: requestedCount) ?? Data()
             guard !chunk.isEmpty else {
                 try? file.close()
                 connection.cancel()
@@ -565,7 +620,11 @@ private final class IPAInstallHTTPServer: @unchecked Sendable {
                     connection.cancel()
                     return
                 }
-                self.sendNextChunk(from: file, on: connection)
+                self.sendNextChunk(
+                    from: file,
+                    remaining: remaining - Int64(chunk.count),
+                    on: connection
+                )
             })
         } catch {
             try? file.close()
