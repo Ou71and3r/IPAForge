@@ -141,7 +141,7 @@ enum IPASigningService {
                 for prefix in prefixesToRemove {
                     let paths = mutableArchive
                         .filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
-                        .map(\\.path)
+                        .map(\.path)
                     for path in paths {
                         if let entry = mutableArchive.first(where: { $0.path == path }) {
                             try mutableArchive.remove(entry)
