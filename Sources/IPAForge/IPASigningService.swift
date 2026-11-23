@@ -30,7 +30,7 @@ enum IPASigningError: LocalizedError {
             let details = components.isEmpty
                 ? "Не бяха прочетени подробности за вложените компоненти."
                 : components.joined(separator: "\n")
-            return "Основният Bundle ID трябва да бъде променен, но IPA съдържа вложени компоненти. Ето диагностиката:\\n\\n\\(details)\\n\\nДобави съвместими provisioning профили за компонентите без съвпадение. Оригиналният IPA не е променен."
+            return "Основният Bundle ID трябва да бъде променен, но IPA съдържа вложени компоненти. Ето диагностиката:\n\n\(details)\n\nДобави съвместими provisioning профили за компонентите без съвпадение. Оригиналният IPA не е променен."
         case .ambiguousProfiles(let identifier):
             return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
         case .expiredProfile(let identifier):
