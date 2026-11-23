@@ -7,7 +7,7 @@ enum IPASigningError: LocalizedError {
     case missingBundleIdentifier
     case missingRootProfile(bundleIdentifier: String, profiles: [String])
     case noMatchingProfile(String)
-    case unsupportedBundleRewrite
+    case unsupportedBundleRewrite(components: [String])
     case ambiguousProfiles(String)
     case expiredProfile(String)
     case outputValidationFailed
@@ -26,8 +26,11 @@ enum IPASigningError: LocalizedError {
             return "Няма provisioning профил, който разрешава основното приложение.\nBundle ID на IPA: \(bundleIdentifier)\n\nИмпортирани профили:\n\(details)\n\nP12 сертификатът е приет от проверката за съответствие с профила."
         case .noMatchingProfile(let identifier):
             return "Няма provisioning профил за вложения компонент: \(identifier)"
-        case .unsupportedBundleRewrite:
-            return "Този IPA съдържа вложено приложение или разширение. Смяната на основния Bundle ID изисква отделни съвместими provisioning профили за тези компоненти. Подписването е прекратено без промяна на файла."
+        case .unsupportedBundleRewrite(let components):
+            let details = components.isEmpty
+                ? "Не бяха прочетени подробности за вложените компоненти."
+                : components.joined(separator: "\\n")
+            return "Основният Bundle ID трябва да бъде променен, но IPA съдържа вложени компоненти. Ето диагностиката:\\n\\n\\(details)\\n\\nДобави съвместими provisioning профили за компонентите без съвпадение. Оригиналният IPA не е променен."
         case .ambiguousProfiles(let identifier):
             return "Няколко provisioning профила съвпадат с \(identifier). Остави само правилния профил."
         case .expiredProfile(let identifier):
@@ -136,15 +139,31 @@ enum IPASigningService {
         }
 
         if signingBundleIdentifier != rootIdentifier {
-            let hasNestedProvisionedBundle = archive.contains { entry in
-                guard entry.path.hasPrefix("Payload/"), entry.path.hasSuffix("/Info.plist") else { return false }
+            var nestedComponents: [String] = []
+            for entry in archive where entry.path.hasPrefix("Payload/") && entry.path.hasSuffix("/Info.plist") {
                 let parts = entry.path.split(separator: "/")
-                guard parts.count >= 4 else { return false }
-                let name = parts.dropLast().last ?? ""
-                return name.hasSuffix(".appex") || name.hasSuffix(".app")
+                guard parts.count >= 4 else { continue }
+                let name = String(parts.dropLast().last ?? "")
+                guard name.hasSuffix(".appex") || name.hasSuffix(".app") else { continue }
+
+                let identifier = try readBundleIdentifier(from: entry)
+                let matchingProfiles = profiles.filter {
+                    $0.profile.supportsBundleIdentifier(identifier)
+                }
+                let profileStatus: String
+                if matchingProfiles.isEmpty {
+                    profileStatus = "НЯМА съвместим профил"
+                } else if matchingProfiles.count > 1 {
+                    profileStatus = "НЯКОЛКО съвместими профила (\\(matchingProfiles.count))"
+                } else if matchingProfiles[0].profile.isExpired() {
+                    profileStatus = "Профилът е изтекъл"
+                } else {
+                    profileStatus = "Има съвместим профил"
+                }
+                nestedComponents.append("\\(name) — \\(identifier) — \\(profileStatus)")
             }
-            guard !hasNestedProvisionedBundle else {
-                throw IPASigningError.unsupportedBundleRewrite
+            guard nestedComponents.isEmpty else {
+                throw IPASigningError.unsupportedBundleRewrite(components: nestedComponents)
             }
         }
 
