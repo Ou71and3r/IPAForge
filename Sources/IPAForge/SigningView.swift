@@ -145,7 +145,12 @@ struct SigningView: View {
         .fileImporter(isPresented: $choosingProfiles, allowedContentTypes: [.data], allowsMultipleSelection: true) { result in
             handleCredentialImport(result, expectedExtension: "mobileprovision") { imported in
                 let known = Set(profileURLs)
-                profileURLs.append(contentsOf: imported.filter { !known.contains($0) })
+                let newProfiles = imported.filter { !known.contains($0) }
+                let duplicates = imported.filter { known.contains($0) }
+                for duplicate in duplicates {
+                    try? FileManager.default.removeItem(at: duplicate)
+                }
+                profileURLs.append(contentsOf: newProfiles)
             }
         }
     }
