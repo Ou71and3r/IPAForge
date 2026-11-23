@@ -2,7 +2,7 @@ name: IPAForge
 options:
   bundleIdPrefix: com.ou71and3r
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "27.0"
   createIntermediateGroups: true
 packages:
   ZIPFoundation:
