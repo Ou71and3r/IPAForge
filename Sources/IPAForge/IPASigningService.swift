@@ -12,6 +12,7 @@ enum IPASigningError: LocalizedError {
     case expiredProfile(String)
     case outputValidationFailed
     case insufficientStorage(required: Int64, available: Int64)
+    case stageFailure(stage: String, reason: String)
 
     var errorDescription: String? {
         switch self {
@@ -41,6 +42,8 @@ enum IPASigningError: LocalizedError {
             let formatter = ByteCountFormatter()
             formatter.countStyle = .file
             return "Недостатъчно свободно място. Необходими са приблизително \(formatter.string(fromByteCount: required)), налични са \(formatter.string(fromByteCount: available)). Освободи място и опитай отново."
+        case .stageFailure(let stage, let reason):
+            return "Грешка на етап „\(stage)“: \(reason)"
         }
     }
 }
@@ -50,7 +53,7 @@ enum IPASigningService {
 
     static func sign(ipaURL: URL, p12URL: URL, profileURLs: [URL], password: String, removeUnsupportedExtensions: Bool = false) throws -> URL {
         let fm = FileManager.default
-        let summary = try IPAArchiveService.inspect(archiveURL: ipaURL)
+        let summary = try perform(stage: "Предварителна проверка на IPA", operation: { try IPAArchiveService.inspect(archiveURL: ipaURL) })
         let (twiceExpanded, overflowA) = summary.uncompressedSize.multipliedReportingOverflow(by: 2)
         let (withInput, overflowB) = twiceExpanded.addingReportingOverflow(summary.fileSize)
         let (baseRequired, overflowC) = withInput.addingReportingOverflow(additionalStorageHeadroom)
@@ -89,13 +92,13 @@ enum IPASigningService {
         var signingInputURL = ipaURL
         if removeUnsupportedExtensions {
             signingInputURL = inspectionDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("ipa")
-            try fm.copyItem(at: ipaURL, to: signingInputURL)
+            try perform(stage: "Създаване на работно копие на IPA", operation: { try fm.copyItem(at: ipaURL, to: signingInputURL) })
         }
 
         func readBundleIdentifier(from entry: Entry, in sourceArchive: Archive) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: fileURL) }
-            _ = try sourceArchive.extract(entry, to: fileURL)
+            _ = try perform(stage: "Извличане на Info.plist: \(entry.path)", operation: { try sourceArchive.extract(entry, to: fileURL) })
             let data = try Data(contentsOf: fileURL)
             guard let info = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
                   let identifier = info["CFBundleIdentifier"] as? String,
@@ -111,7 +114,7 @@ enum IPASigningService {
             // for some large/compressed entries.
             let prefixesToRemove: Set<String> = try {
                 var prefixes = Set<String>()
-                let candidateArchive = try Archive(url: signingInputURL, accessMode: .read)
+                let candidateArchive = try perform(stage: "Отваряне на IPA за проверка на разширенията", operation: { try Archive(url: signingInputURL, accessMode: .read) })
                 let extensionInfoEntries = candidateArchive.filter { entry in
                     let parts = entry.path.split(separator: "/", omittingEmptySubsequences: true)
                     guard parts.count >= 4, parts.last == "Info.plist",
@@ -139,21 +142,21 @@ enum IPASigningService {
             }()
 
             if !prefixesToRemove.isEmpty {
-                let mutableArchive = try Archive(url: signingInputURL, accessMode: .update)
+                let mutableArchive = try perform(stage: "Отваряне на IPA за премахване на разширения", operation: { try Archive(url: signingInputURL, accessMode: .update) })
                 for prefix in prefixesToRemove {
                     let paths = mutableArchive
                         .filter { $0.path == String(prefix.dropLast()) || $0.path.hasPrefix(prefix) }
                         .map(\.path)
                     for path in paths {
                         if let entry = mutableArchive.first(where: { $0.path == path }) {
-                            try mutableArchive.remove(entry)
+                            try perform(stage: "Премахване на запис: \(path)", operation: { try mutableArchive.remove(entry) })
                         }
                     }
                 }
             }
         }
 
-        let readArchive = try Archive(url: signingInputURL, accessMode: .read)
+        let readArchive = try perform(stage: "Отваряне на IPA за подписване", operation: { try Archive(url: signingInputURL, accessMode: .read) })
         let rootInfoEntry = readArchive.first(where: {
             let parts = $0.path.split(separator: "/")
             return parts.count == 3 && parts[0] == "Payload"
@@ -164,7 +167,7 @@ enum IPASigningService {
         func readBundleIdentifierFromReadArchive(_ entry: Entry) throws -> String {
             let fileURL = inspectionDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? fm.removeItem(at: fileURL) }
-            _ = try readArchive.extract(entry, to: fileURL)
+            _ = try perform(stage: "Извличане на Info.plist: \(entry.path)", operation: { try readArchive.extract(entry, to: fileURL) })
             let data = try Data(contentsOf: fileURL)
             guard let info = try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any],
                   let identifier = info["CFBundleIdentifier"] as? String,
@@ -339,7 +342,7 @@ enum IPASigningService {
         try temporaryOutputURL.setResourceValues(temporaryOutputValues)
 
         // Validate the completed archive before publishing it to the user.
-        let signedSummary = try IPAArchiveService.inspect(archiveURL: temporaryOutputURL)
+        let signedSummary = try perform(stage: "Проверка на готовия подписан IPA", operation: { try IPAArchiveService.inspect(archiveURL: temporaryOutputURL) })
         guard signedSummary.hasPayload,
               signedSummary.appBundleNames == summary.appBundleNames else {
             throw IPASigningError.outputValidationFailed
@@ -347,6 +350,16 @@ enum IPASigningService {
 
         try fm.moveItem(at: temporaryOutputURL, to: outputURL)
         return outputURL
+    }
+
+    private static func perform<T>(stage: String, operation: () throws -> T) throws -> T {
+        do {
+            return try operation()
+        } catch let error as IPASigningError {
+            throw error
+        } catch {
+            throw IPASigningError.stageFailure(stage: stage, reason: error.localizedDescription)
+        }
     }
 
     /// Removes abandoned workspaces and hidden partial outputs left behind if
